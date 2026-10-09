@@ -1,0 +1,7 @@
+{
+  "name": "IdeaFactory",
+  "description": "Architect-grade software development project idea generator, spec refiner, and technical repository.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
