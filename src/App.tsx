@@ -15,6 +15,8 @@ import {
 import { IdeaDetailModal } from './components/IdeaDetailModal';
 import { IdeaItem } from './types/idea';
 import { SEED_IDEAS } from './data/seedIdeas';
+import { expandToSpec } from './lib/ideasApi';
+import { DEFAULT_EXPAND_MODEL } from './lib/sketches';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('ideas');
@@ -103,6 +105,23 @@ export default function App() {
     setIdeas((prev) => [idea, ...prev.filter((item) => item.id !== idea.id)]);
     setCurrentIdea(idea);
     setActiveTab('generator');
+  };
+
+  // Errors propagate so the modal can show them next to its Expand button.
+  const handleExpandDraft = async (draft: IdeaItem) => {
+    const idea = await expandToSpec(
+      {
+        title: draft.title,
+        pitch: draft.tagline,
+        language: draft.language,
+        domain: draft.domain,
+        complexity: draft.complexity,
+        goal: draft.goal,
+      },
+      DEFAULT_EXPAND_MODEL
+    );
+    setInspectingIdea(null);
+    handleExpanded(idea, draft.id);
   };
 
   const handleOpenInRefiner = (idea: IdeaItem) => {
@@ -208,6 +227,7 @@ export default function App() {
           onOpenInRefiner={handleOpenInRefiner}
           onOpenInChat={handleOpenInChat}
           onToggleBookmark={handleToggleBookmark}
+          onExpandDraft={handleExpandDraft}
         />
       )}
 

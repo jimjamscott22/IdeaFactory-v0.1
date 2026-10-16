@@ -24,6 +24,7 @@ import {
   DomainCategory,
 } from '../types/idea';
 import { formatIdeaAsMarkdown, downloadFile } from '../utils/export';
+import { DraftBadge } from './DraftBadge';
 
 interface RepositoryViewProps {
   ideas: IdeaItem[];
@@ -239,6 +240,7 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
                     className="text-base font-bold text-slate-100 group-hover:text-indigo-300 cursor-pointer transition-colors"
                   >
                     {idea.title}
+                    {idea.isDraft && <DraftBadge />}
                   </h3>
                   <p className="mt-1 text-xs text-slate-400 leading-relaxed line-clamp-2">
                     {idea.tagline}
@@ -251,7 +253,7 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
                     Architecture Highlights:
                   </span>
                   <p className="text-slate-300 line-clamp-2 leading-relaxed">
-                    {idea.coreArchitecture}
+                    {idea.coreArchitecture || 'Draft idea. Open it and expand it to generate the architecture.'}
                   </p>
                 </div>
 
@@ -330,7 +332,10 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
                 {filteredIdeas.map((idea) => (
                   <tr key={idea.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-100">{idea.title}</div>
+                      <div className="font-semibold text-slate-100">
+                        {idea.title}
+                        {idea.isDraft && <DraftBadge />}
+                      </div>
                       <div className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">{idea.tagline}</div>
                     </td>
                     <td className="py-3 px-4 font-mono text-emerald-400">{idea.language}</td>
