@@ -222,10 +222,20 @@ describe('LM Studio client', () => {
   });
 
   it('reports status for a reachable and an unreachable server', async () => {
-    const ok = createLlmClient(lmEnv, vi.fn())!;
+    const fetchMock = vi.fn().mockResolvedValue(json(200, { data: [{ id: 'qwen-test' }] }));
+    const ok = createLlmClient(lmEnv, fetchMock)!;
     await expect(ok.status()).resolves.toMatchObject({ provider: 'lmstudio', label: 'LM Studio · qwen-test', reachable: true });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/models'))).toBe(true);
 
     const down = createLlmClient({ LLM_PROVIDER: 'lmstudio' }, vi.fn().mockRejectedValue(new TypeError('fetch failed')))!;
     await expect(down.status()).resolves.toMatchObject({ provider: 'lmstudio', reachable: false });
+  });
+
+  it('pings LM Studio for status even when LMSTUDIO_MODEL is preset', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const client = createLlmClient(lmEnv, fetchMock)!;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(client.status()).resolves.toMatchObject({ reachable: false });
+    expect(fetchMock).toHaveBeenCalled();
   });
 });

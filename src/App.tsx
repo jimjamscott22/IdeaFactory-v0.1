@@ -110,12 +110,12 @@ export default function App() {
 
   // A freshly expanded spec replaces its draft (if any) and opens in the Generator.
   const handleExpanded = (idea: IdeaItem, draftId?: string) => {
+    setIdeas((prev) => [idea, ...prev.filter((item) => item.id !== idea.id && item.id !== draftId)]);
+    setCurrentIdea(idea);
+    setActiveTab('generator');
     if (draftId) {
       void handleDeleteIdea(draftId);
     }
-    setIdeas((prev) => [idea, ...prev.filter((item) => item.id !== idea.id)]);
-    setCurrentIdea(idea);
-    setActiveTab('generator');
   };
 
   // Errors propagate so the modal can show them next to its Expand button.
