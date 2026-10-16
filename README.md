@@ -175,7 +175,7 @@ All endpoints use JSON and are implemented in `server.ts`.
 | `POST` | `/api/generate-ideas` | Return 3, 5, or 8 short idea sketches; accepts `language`, `complexity`, `domain`, `goal`, `count`, `avoidTitles`, and `model`. Sketches are not added to the catalog. |
 | `POST` | `/api/refine-idea` | Refine an `idea` using `refinementType`, optional `customQuestion`, and `model`. |
 | `POST` | `/api/chat` | Respond to `messages` with a selected `role`, optional `currentIdeaContext`, and `model`. |
-| `GET` | `/api/llm-status` | Report the active provider (`gemini`, `lmstudio`, or `demo`), a display label, and for LM Studio the model and whether it is reachable. |
+| `GET` | `/api/llm-status` | Report the active provider (`gemini`, `lmstudio`, or `demo`), a display label, and for LM Studio the model and whether it is reachable. Failure details are logged on the server, not returned. |
 | `GET` | `/api/ideas` | Return the current catalog and total count. |
 | `POST` | `/api/ideas` | Add an idea to the current catalog. |
 | `PUT` | `/api/ideas/:id` | Merge supplied fields into an existing idea. |

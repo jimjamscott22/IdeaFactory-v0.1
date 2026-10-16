@@ -28,7 +28,6 @@ export interface LlmStatus {
   label: string;
   model?: string;
   reachable?: boolean;
-  error?: string;
 }
 
 export interface LlmClient {
@@ -63,6 +62,16 @@ export function resolveProvider(env: Env): LlmProvider | null {
     throw new Error(`Unknown LLM_PROVIDER "${env.LLM_PROVIDER}". Use "gemini" or "lmstudio".`);
   }
   return env.GEMINI_API_KEY ? 'gemini' : null;
+}
+
+/** Drops credentials and query strings so a URL is safe to show in messages. */
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return '(invalid LMSTUDIO_BASE_URL)';
+  }
 }
 
 /** Gemini schemas use uppercase types (Type.OBJECT === 'OBJECT'); JSON Schema wants lowercase. */
@@ -132,12 +141,12 @@ function createLmStudioClient(env: Env, fetchImpl: FetchLike): LlmClient {
 
   const unreachable = () =>
     new Error(
-      `Could not reach LM Studio at ${baseUrl}. Start the local server in LM Studio (Developer tab) or set LMSTUDIO_BASE_URL.`
+      `Could not reach LM Studio at ${redactUrl(baseUrl)}. Start the local server in LM Studio (Developer tab) or set LMSTUDIO_BASE_URL.`
     );
 
   const getJson = async (url: string): Promise<any> => {
     const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) throw new Error(`LM Studio returned ${response.status} for ${url}`);
+    if (!response.ok) throw new Error(`LM Studio returned ${response.status} for ${redactUrl(url)}`);
     return response.json();
   };
 
@@ -230,12 +239,9 @@ function createLmStudioClient(env: Env, fetchImpl: FetchLike): LlmClient {
         const model = await resolveModel();
         return { provider: 'lmstudio', label: `LM Studio · ${model}`, model, reachable: true };
       } catch (error) {
-        return {
-          provider: 'lmstudio',
-          label: 'LM Studio · not ready',
-          reachable: false,
-          error: error instanceof Error ? error.message : String(error),
-        };
+        // Details stay in the server log; the unauthenticated status route only reports readiness.
+        console.warn('LM Studio status check failed:', error instanceof Error ? error.message : error);
+        return { provider: 'lmstudio', label: 'LM Studio · not ready', reachable: false };
       }
     },
   };

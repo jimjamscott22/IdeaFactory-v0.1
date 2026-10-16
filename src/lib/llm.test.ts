@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanModelText, createLlmClient, getValidGeminiModel, resolveProvider, toJsonSchema } from './llm';
+import { cleanModelText, createLlmClient, getValidGeminiModel, redactUrl, resolveProvider, toJsonSchema } from './llm';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -53,6 +53,13 @@ describe('getValidGeminiModel', () => {
     expect(getValidGeminiModel('gemini-3.5-flash')).toBe('gemini-3.5-flash');
     expect(getValidGeminiModel('qwen-test')).toBe('gemini-3.8-flash');
     expect(getValidGeminiModel()).toBe('gemini-3.8-flash');
+  });
+});
+
+describe('redactUrl', () => {
+  it('removes credentials and query strings', () => {
+    expect(redactUrl('http://user:pw@box:1234/v1/?token=x')).toBe('http://box:1234/v1');
+    expect(redactUrl('not a url')).toBe('(invalid LMSTUDIO_BASE_URL)');
   });
 });
 
@@ -185,6 +192,19 @@ describe('LM Studio client', () => {
     await expect(client.generate({ messages: [{ role: 'user', content: 'hi' }] })).rejects.toThrow(
       'Could not reach LM Studio at http://localhost:1234/v1'
     );
+  });
+
+  it('never puts URL credentials in the unreachable error or the status', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const client = createLlmClient({ ...lmEnv, LMSTUDIO_BASE_URL: 'http://user:pw@box:1234/v1' }, fetchMock)!;
+    const failure = await client.generate({ messages: [{ role: 'user', content: 'hi' }] }).catch((e) => e.message);
+    expect(failure).toContain('http://box:1234/v1');
+    expect(failure).not.toContain('pw');
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const status = await createLlmClient({ LLM_PROVIDER: 'lmstudio', LMSTUDIO_BASE_URL: 'http://user:pw@box:1234/v1' }, fetchMock)!.status();
+    expect(JSON.stringify(status)).not.toContain('pw');
+    expect(status).not.toHaveProperty('error');
   });
 
   it("surfaces LM Studio's error message", async () => {
