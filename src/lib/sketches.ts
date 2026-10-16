@@ -4,6 +4,8 @@ import type {
   DomainChoice,
   GenerateIdeasRequest,
   IdeaCount,
+  IdeaItem,
+  IdeaSketch,
   ProgrammingLanguage,
   ProjectGoal,
 } from '../types/idea';
@@ -106,4 +108,108 @@ export function normalizeGenerateIdeasRequest(body: unknown): GenerateIdeasReque
     avoidTitles: cleanAvoidTitles(input.avoidTitles),
     model,
   };
+}
+
+const FALLBACK_LANGUAGE: ProgrammingLanguage = 'TypeScript';
+const FALLBACK_DOMAIN: DomainCategory = 'Full-Stack Architecture';
+const FALLBACK_HOURS = '20-30 hours';
+const MAX_TAGS = 5;
+
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+function resolveLanguage(value: unknown, requested: ProgrammingLanguage): ProgrammingLanguage {
+  if (requested !== 'Any Language') return requested;
+  return matchOption(value, CONCRETE_LANGUAGES, FALLBACK_LANGUAGE);
+}
+
+function resolveDomain(value: unknown, requested: DomainChoice): DomainCategory {
+  if (requested !== 'Any Domain') return requested;
+  return matchOption(value, CONCRETE_DOMAINS, FALLBACK_DOMAIN);
+}
+
+function cleanTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(text).filter(Boolean).slice(0, MAX_TAGS);
+}
+
+// Turns untrusted model output into at most `req.count` valid, unique sketches.
+export function parseSketches(raw: unknown, req: GenerateIdeasRequest, now = Date.now()): IdeaSketch[] {
+  const items: unknown[] = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { ideas?: unknown }).ideas)
+      ? (raw as { ideas: unknown[] }).ideas
+      : [];
+
+  const seenTitles = new Set(req.avoidTitles.map((title) => title.toLowerCase()));
+  const sketches: IdeaSketch[] = [];
+
+  for (const item of items) {
+    if (sketches.length >= req.count) break;
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+
+    const title = text(record.title);
+    const pitch = text(record.pitch);
+    if (!title || !pitch) continue;
+
+    const titleKey = title.toLowerCase();
+    if (seenTitles.has(titleKey)) continue;
+    seenTitles.add(titleKey);
+
+    sketches.push({
+      id: `sketch-${now}-${sketches.length}`,
+      title,
+      pitch,
+      whyItFits: text(record.whyItFits),
+      estimatedHours: text(record.estimatedHours) || FALLBACK_HOURS,
+      tags: cleanTags(record.tags),
+      language: resolveLanguage(record.language, req.language),
+      domain: resolveDomain(record.domain, req.domain),
+      complexity: req.complexity,
+      goal: req.goal,
+    });
+  }
+
+  return sketches;
+}
+
+// A saved sketch becomes a sparse IdeaItem flagged as a draft until it is expanded.
+export function sketchToDraftIdea(sketch: IdeaSketch, now = new Date()): IdeaItem {
+  return {
+    id: `draft-${sketch.id}`,
+    title: sketch.title,
+    tagline: sketch.pitch,
+    language: sketch.language,
+    domain: sketch.domain,
+    complexity: sketch.complexity,
+    estimatedHours: sketch.estimatedHours,
+    problemStatement: sketch.pitch,
+    coreArchitecture: '',
+    techStack: { language: sketch.language, protocols: [], libraries: [] },
+    architectureFlow: [],
+    keyChallenges: [],
+    mvpPhases: [],
+    learningOutcomes: [],
+    interviewTalkingPoints: [],
+    tags: sketch.tags,
+    isDraft: true,
+    isBookmarked: false,
+    goal: sketch.goal,
+    createdAt: now.toISOString().split('T')[0],
+  };
+}
+
+export type ExpandSource = Pick<IdeaSketch, 'title' | 'pitch' | 'language' | 'domain' | 'complexity'> & {
+  goal?: ProjectGoal;
+};
+
+export function buildExpandPrompt(source: Pick<ExpandSource, 'title' | 'pitch' | 'goal'>): string {
+  return [
+    `Expand this project idea into a full specification: "${source.title}".`,
+    `Pitch: ${source.pitch}`,
+    source.goal ? `The builder's primary goal is: ${source.goal}.` : '',
+    'Keep the same core concept and project name.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
