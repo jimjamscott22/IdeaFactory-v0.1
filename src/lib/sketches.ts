@@ -9,6 +9,7 @@ import type {
   ProgrammingLanguage,
   ProjectGoal,
 } from '../types/idea';
+import { DEMO_SKETCH_POOL, GOAL_REASONS, type DemoSketchSeed } from '../data/demoSketches';
 
 export const LANGUAGE_OPTIONS: ProgrammingLanguage[] = [
   'Any Language',
@@ -212,4 +213,52 @@ export function buildExpandPrompt(source: Pick<ExpandSource, 'title' | 'pitch' |
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+function shuffle<T>(items: T[], rng: () => number): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+// Demo-mode batches: matching ideas first, then the rest of the pool, never fewer than `count`.
+export function buildDemoSketches(
+  req: GenerateIdeasRequest,
+  rng: () => number = Math.random,
+  now = Date.now()
+): IdeaSketch[] {
+  const avoided = new Set(req.avoidTitles.map((title) => title.toLowerCase()));
+  const fresh = DEMO_SKETCH_POOL.filter((seed) => !avoided.has(seed.title.toLowerCase()));
+  const matches = (seed: DemoSketchSeed) =>
+    (req.domain === 'Any Domain' || seed.domain === req.domain) &&
+    (req.language === 'Any Language' || seed.languages.includes(req.language));
+
+  let chosen = [
+    ...shuffle(fresh.filter(matches), rng),
+    ...shuffle(fresh.filter((seed) => !matches(seed)), rng),
+  ].slice(0, req.count);
+
+  if (chosen.length < req.count) {
+    const leftovers = shuffle(DEMO_SKETCH_POOL.filter((seed) => !chosen.includes(seed)), rng);
+    chosen = [...chosen, ...leftovers].slice(0, req.count);
+  }
+
+  return chosen.map((seed, index) => ({
+    id: `sketch-${now}-${index}`,
+    title: seed.title,
+    pitch: seed.pitch,
+    whyItFits: GOAL_REASONS[req.goal],
+    estimatedHours: seed.estimatedHours,
+    tags: seed.tags,
+    language:
+      req.language !== 'Any Language'
+        ? req.language
+        : seed.languages[Math.floor(rng() * seed.languages.length)],
+    domain: seed.domain,
+    complexity: req.complexity,
+    goal: req.goal,
+  }));
 }

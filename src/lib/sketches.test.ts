@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { GenerateIdeasRequest, IdeaSketch } from '../types/idea';
+import { DEMO_SKETCH_POOL } from '../data/demoSketches';
 import {
+  CONCRETE_DOMAINS,
   DEFAULT_IDEAS_REQUEST,
+  buildDemoSketches,
   buildExpandPrompt,
   normalizeGenerateIdeasRequest,
   parseSketches,
@@ -221,5 +224,81 @@ describe('buildExpandPrompt', () => {
   it('omits the goal line when there is no goal', () => {
     const prompt = buildExpandPrompt({ title: 'Tiny KV', pitch: 'A tiny key-value store.' });
     expect(prompt).not.toContain('goal');
+  });
+});
+
+// Deterministic RNG (mulberry32) so shuffles are reproducible in tests.
+function seededRng(seed: number): () => number {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('DEMO_SKETCH_POOL', () => {
+  it('has unique titles, valid languages, and at least three ideas per domain', () => {
+    const titles = DEMO_SKETCH_POOL.map((seed) => seed.title.toLowerCase());
+    expect(new Set(titles).size).toBe(titles.length);
+    for (const seed of DEMO_SKETCH_POOL) {
+      expect(seed.languages.length).toBeGreaterThan(0);
+      expect(seed.languages).not.toContain('Any Language');
+    }
+    for (const domain of CONCRETE_DOMAINS) {
+      expect(DEMO_SKETCH_POOL.filter((seed) => seed.domain === domain).length).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
+describe('buildDemoSketches', () => {
+  it('returns count unique sketches stamped with the request', () => {
+    const req = { ...baseReq, count: 5 as const, goal: 'Learning' as const, complexity: 'Beginner' as const };
+    const result = buildDemoSketches(req, seededRng(1), 42);
+    expect(result).toHaveLength(5);
+    expect(new Set(result.map((s) => s.title)).size).toBe(5);
+    for (const [index, sketch] of result.entries()) {
+      expect(sketch.id).toBe(`sketch-42-${index}`);
+      expect(sketch.goal).toBe('Learning');
+      expect(sketch.complexity).toBe('Beginner');
+      expect(sketch.whyItFits).not.toBe('');
+      expect(sketch.language).not.toBe('Any Language');
+    }
+  });
+
+  it('prefers the requested domain', () => {
+    const result = buildDemoSketches({ ...baseReq, domain: 'Database Engines', count: 3 }, seededRng(2));
+    expect(result.every((s) => s.domain === 'Database Engines')).toBe(true);
+  });
+
+  it('applies a concrete requested language to every sketch', () => {
+    const result = buildDemoSketches({ ...baseReq, language: 'Go', count: 8 }, seededRng(3));
+    expect(result.every((s) => s.language === 'Go')).toBe(true);
+  });
+
+  it('returns a different batch when the previous titles are avoided', () => {
+    const rng = seededRng(4);
+    const first = buildDemoSketches({ ...baseReq, count: 8 }, rng);
+    const second = buildDemoSketches({ ...baseReq, count: 8, avoidTitles: first.map((s) => s.title) }, rng);
+    const firstTitles = new Set(first.map((s) => s.title));
+    expect(second.some((s) => firstTitles.has(s.title))).toBe(false);
+  });
+
+  it('fills from the rest of the pool when the domain filter runs out', () => {
+    const dbTitles = DEMO_SKETCH_POOL.filter((seed) => seed.domain === 'Database Engines').map((seed) => seed.title);
+    const result = buildDemoSketches(
+      { ...baseReq, domain: 'Database Engines', count: 8, avoidTitles: dbTitles },
+      seededRng(5)
+    );
+    expect(result).toHaveLength(8);
+    expect(result.some((s) => dbTitles.includes(s.title))).toBe(false);
+  });
+
+  it('still returns count sketches when every title is avoided', () => {
+    const result = buildDemoSketches(
+      { ...baseReq, count: 8, avoidTitles: DEMO_SKETCH_POOL.map((seed) => seed.title) },
+      seededRng(6)
+    );
+    expect(result).toHaveLength(8);
   });
 });
