@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Sparkles,
+  Lightbulb,
   FileCode2,
   Database,
   Network,
@@ -9,7 +10,7 @@ import {
   Terminal,
 } from 'lucide-react';
 
-export type ActiveTab = 'generator' | 'refiner' | 'repository' | 'architecture' | 'chat';
+export type ActiveTab = 'ideas' | 'generator' | 'refiner' | 'repository' | 'architecture' | 'chat';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -27,6 +28,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   hasActiveIdea,
 }) => {
   const navItems: { id: ActiveTab; label: string; icon: React.ReactNode; count?: number }[] = [
+    {
+      id: 'ideas',
+      label: 'Ideas',
+      icon: <Lightbulb className="w-4 h-4 text-yellow-300" />,
+    },
     {
       id: 'generator',
       label: 'Generator',

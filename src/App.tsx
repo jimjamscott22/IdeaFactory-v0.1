@@ -5,16 +5,26 @@ import { RefinerView } from './components/RefinerView';
 import { RepositoryView } from './components/RepositoryView';
 import { ArchitectureView } from './components/ArchitectureView';
 import { ChatbotView } from './components/ChatbotView';
+import {
+  IdeasView,
+  IdeasOptions,
+  SketchBatch,
+  DEFAULT_IDEAS_OPTIONS,
+  EMPTY_SKETCH_BATCH,
+} from './components/IdeasView';
 import { IdeaDetailModal } from './components/IdeaDetailModal';
 import { IdeaItem } from './types/idea';
 import { SEED_IDEAS } from './data/seedIdeas';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('generator');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('ideas');
   const [ideas, setIdeas] = useState<IdeaItem[]>(SEED_IDEAS);
   const [currentIdea, setCurrentIdea] = useState<IdeaItem | null>(SEED_IDEAS[0]);
   const [inspectingIdea, setInspectingIdea] = useState<IdeaItem | null>(null);
   const [chatIdeaContext, setChatIdeaContext] = useState<IdeaItem | null>(SEED_IDEAS[0]);
+  // Ideas tab state lives here so it survives tab switches.
+  const [ideasOptions, setIdeasOptions] = useState<IdeasOptions>(DEFAULT_IDEAS_OPTIONS);
+  const [sketchBatch, setSketchBatch] = useState<SketchBatch>(EMPTY_SKETCH_BATCH);
 
   // Load ideas from backend API on mount
   useEffect(() => {
@@ -81,6 +91,20 @@ export default function App() {
     setActiveTab('generator');
   };
 
+  const handleSaveDraft = (draft: IdeaItem) => {
+    setIdeas((prev) => [draft, ...prev.filter((item) => item.id !== draft.id)]);
+  };
+
+  // A freshly expanded spec replaces its draft (if any) and opens in the Generator.
+  const handleExpanded = (idea: IdeaItem, draftId?: string) => {
+    if (draftId) {
+      void handleDeleteIdea(draftId);
+    }
+    setIdeas((prev) => [idea, ...prev.filter((item) => item.id !== idea.id)]);
+    setCurrentIdea(idea);
+    setActiveTab('generator');
+  };
+
   const handleOpenInRefiner = (idea: IdeaItem) => {
     setCurrentIdea(idea);
     setActiveTab('refiner');
@@ -106,6 +130,17 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1">
+        {activeTab === 'ideas' && (
+          <IdeasView
+            options={ideasOptions}
+            setOptions={setIdeasOptions}
+            batch={sketchBatch}
+            setBatch={setSketchBatch}
+            onSaveDraft={handleSaveDraft}
+            onExpanded={handleExpanded}
+          />
+        )}
+
         {activeTab === 'generator' && (
           <GeneratorView
             currentIdea={currentIdea}
