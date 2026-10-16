@@ -99,7 +99,7 @@ export const ChatbotView: React.FC<ChatbotViewProps> = ({
       const errMsg: ChatMessage = {
         id: `err-${Date.now()}`,
         role: 'model',
-        content: `Error communicating with Gemini: ${err.message}`,
+        content: `Error communicating with the AI model: ${err.message}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errMsg]);

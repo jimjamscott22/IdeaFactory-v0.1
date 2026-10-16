@@ -5,16 +5,29 @@ import { RefinerView } from './components/RefinerView';
 import { RepositoryView } from './components/RepositoryView';
 import { ArchitectureView } from './components/ArchitectureView';
 import { ChatbotView } from './components/ChatbotView';
+import {
+  IdeasView,
+  IdeasOptions,
+  SketchBatch,
+  DEFAULT_IDEAS_OPTIONS,
+  EMPTY_SKETCH_BATCH,
+} from './components/IdeasView';
 import { IdeaDetailModal } from './components/IdeaDetailModal';
 import { IdeaItem } from './types/idea';
 import { SEED_IDEAS } from './data/seedIdeas';
+import { expandToSpec } from './lib/ideasApi';
+import { DEFAULT_EXPAND_MODEL } from './lib/sketches';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('generator');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('ideas');
   const [ideas, setIdeas] = useState<IdeaItem[]>(SEED_IDEAS);
   const [currentIdea, setCurrentIdea] = useState<IdeaItem | null>(SEED_IDEAS[0]);
   const [inspectingIdea, setInspectingIdea] = useState<IdeaItem | null>(null);
   const [chatIdeaContext, setChatIdeaContext] = useState<IdeaItem | null>(SEED_IDEAS[0]);
+  // Ideas tab state lives here so it survives tab switches.
+  const [ideasOptions, setIdeasOptions] = useState<IdeasOptions>(DEFAULT_IDEAS_OPTIONS);
+  const [sketchBatch, setSketchBatch] = useState<SketchBatch>(EMPTY_SKETCH_BATCH);
+  const [llmLabel, setLlmLabel] = useState('Gemini 3.8 Flash');
 
   // Load ideas from backend API on mount
   useEffect(() => {
@@ -31,6 +44,16 @@ export default function App() {
       .catch((err) => {
         console.warn('Could not fetch ideas from server, using pre-seeded catalog:', err);
       });
+  }, []);
+
+  // Which provider answers (Gemini, LM Studio, or demo) is decided by the server's env.
+  useEffect(() => {
+    fetch('/api/llm-status')
+      .then((res) => res.json())
+      .then((status) => {
+        if (typeof status.label === 'string') setLlmLabel(status.label);
+      })
+      .catch(() => {});
   }, []);
 
   const handleToggleBookmark = async (targetIdea: IdeaItem) => {
@@ -81,6 +104,37 @@ export default function App() {
     setActiveTab('generator');
   };
 
+  const handleSaveDraft = (draft: IdeaItem) => {
+    setIdeas((prev) => [draft, ...prev.filter((item) => item.id !== draft.id)]);
+  };
+
+  // A freshly expanded spec replaces its draft (if any) and opens in the Generator.
+  const handleExpanded = (idea: IdeaItem, draftId?: string) => {
+    setIdeas((prev) => [idea, ...prev.filter((item) => item.id !== idea.id && item.id !== draftId)]);
+    setCurrentIdea(idea);
+    setActiveTab('generator');
+    if (draftId) {
+      void handleDeleteIdea(draftId);
+    }
+  };
+
+  // Errors propagate so the modal can show them next to its Expand button.
+  const handleExpandDraft = async (draft: IdeaItem) => {
+    const idea = await expandToSpec(
+      {
+        title: draft.title,
+        pitch: draft.tagline,
+        language: draft.language,
+        domain: draft.domain,
+        complexity: draft.complexity,
+        goal: draft.goal,
+      },
+      DEFAULT_EXPAND_MODEL
+    );
+    setInspectingIdea(null);
+    handleExpanded(idea, draft.id);
+  };
+
   const handleOpenInRefiner = (idea: IdeaItem) => {
     setCurrentIdea(idea);
     setActiveTab('refiner');
@@ -102,10 +156,22 @@ export default function App() {
           setActiveTab('generator');
         }}
         hasActiveIdea={!!currentIdea}
+        llmLabel={llmLabel}
       />
 
       {/* Main Content Area */}
       <main className="flex-1">
+        {activeTab === 'ideas' && (
+          <IdeasView
+            options={ideasOptions}
+            setOptions={setIdeasOptions}
+            batch={sketchBatch}
+            setBatch={setSketchBatch}
+            onSaveDraft={handleSaveDraft}
+            onExpanded={handleExpanded}
+          />
+        )}
+
         {activeTab === 'generator' && (
           <GeneratorView
             currentIdea={currentIdea}
@@ -173,6 +239,7 @@ export default function App() {
           onOpenInRefiner={handleOpenInRefiner}
           onOpenInChat={handleOpenInChat}
           onToggleBookmark={handleToggleBookmark}
+          onExpandDraft={handleExpandDraft}
         />
       )}
 
@@ -186,7 +253,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4 text-[11px] font-mono text-slate-400">
-            <span>Powered by Gemini 3.8 Flash</span>
+            <span>Powered by {llmLabel}</span>
             <span aria-hidden="true">·</span>
             <span>Model Context Protocol (MCP)</span>
             <span aria-hidden="true">·</span>

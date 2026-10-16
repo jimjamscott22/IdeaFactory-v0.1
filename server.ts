@@ -1,12 +1,24 @@
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { SEED_IDEAS } from './src/data/seedIdeas.ts';
 import { IdeaItem } from './src/types/idea.ts';
+import {
+  CONCRETE_DOMAINS,
+  CONCRETE_LANGUAGES,
+  DEFAULT_SKETCH_MODEL,
+  buildDemoExpandedIdea,
+  buildDemoSketches,
+  mergeSketches,
+  normalizeGenerateIdeasRequest,
+  parseSketches,
+} from './src/lib/sketches.ts';
+import type { ProjectGoal } from './src/types/idea.ts';
+import { createLlmClient } from './src/lib/llm.ts';
 
 dotenv.config();
 
@@ -19,31 +31,15 @@ app.use(express.json({ limit: '10mb' }));
 // In-memory repository seeded with initial high-caliber ideas
 let repository: IdeaItem[] = [...SEED_IDEAS];
 
-// Initialize Google GenAI client (server-side only)
-const apiKey = process.env.GEMINI_API_KEY || '';
-const ai = apiKey
-  ? new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    })
-  : null;
+// LLM client (server-side only): Gemini or LM Studio per env, null means demo mode.
+const llm = createLlmClient();
+console.log(
+  llm ? `LLM provider: ${llm.provider}` : 'LLM provider: none (demo mode, set GEMINI_API_KEY or LLM_PROVIDER=lmstudio)'
+);
 
-// Helper: Normalize model name to ensure valid modern Gemini models
-function getValidModel(requestedModel?: string): string {
-  if (!requestedModel) return 'gemini-3.8-flash';
-  const valid = [
-    'gemini-3.8-flash',
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-3.1-pro-preview',
-  ];
-  if (valid.includes(requestedModel)) return requestedModel;
-  return 'gemini-3.8-flash';
-}
+app.get('/api/llm-status', async (_req: Request, res: Response) => {
+  res.json(llm ? await llm.status() : { provider: 'demo', label: 'Demo mode' });
+});
 
 // ----------------------------------------------------
 // 1. API: Generate Idea using Gemini 3.8 Flash
@@ -59,79 +55,9 @@ app.post('/api/generate-idea', async (req: Request, res: Response) => {
       model = 'gemini-3.8-flash',
     } = req.body;
 
-    const chosenModel = getValidModel(model);
-
-    if (!ai) {
-      // Graceful offline mock if API key isn't injected yet
-      const fallbackIdea: IdeaItem = {
-        id: `gen-${Date.now()}`,
-        title: `${language} ${domain} Core Engine`,
-        tagline: `High-throughput, resilient ${domain.toLowerCase()} architecture in ${language} designed for ${complexity.toLowerCase()} engineers.`,
-        language,
-        domain,
-        complexity,
-        estimatedHours: '35-50 hours',
-        problemStatement: `Modern software systems require high-reliability ${domain.toLowerCase()} infrastructure. This project challenges you to build the core engine from first principles in ${language}.`,
-        coreArchitecture: `Multi-threaded asynchronous architecture leveraging ${language}'s native concurrency and standard library primitives, featuring memory-safe state isolation and structured logging.`,
-        techStack: {
-          language,
-          protocols: ['TCP/IP', 'Binary Framing'],
-          libraries: ['Standard Library', 'Telemetry', 'Async Runtime'],
-        },
-        architectureFlow: [
-          'Client initiates connection over dedicated socket',
-          'Zero-copy frame parser validates checksum and extracts payload',
-          'Lock-free queue dispatches job to thread pool workers',
-          'State machine commits transition and logs to append-only WAL',
-          'Response frame dispatched with latency metrics attached',
-        ],
-        keyChallenges: [
-          {
-            title: 'Zero-Copy Buffer Management',
-            description: 'Preventing memory fragmentation and excess heap allocations under heavy load.',
-            solutionHint: 'Implement ring buffer pooling with byte slice slicing.',
-          },
-          {
-            title: 'Deadlock-Free State Synchronization',
-            description: 'Coordinating concurrent state machine mutations across multiple worker threads.',
-            solutionHint: 'Utilize message-passing channels or fine-grained read-write locks.',
-          },
-        ],
-        mvpPhases: [
-          {
-            phase: 'Phase 1',
-            name: 'Core In-Memory Prototype',
-            duration: '1-2 Weeks',
-            goals: ['Protocol parsing', 'Basic state machine', 'Unit tests'],
-            deliverables: ['Working single-process engine with test suite'],
-          },
-          {
-            phase: 'Phase 2',
-            name: 'Durability & Concurrency',
-            duration: '2 Weeks',
-            goals: ['Multi-threading', 'Disk persistence WAL', 'Graceful shutdown'],
-            deliverables: ['Thread-safe engine with crash recovery'],
-          },
-          {
-            phase: 'Phase 3',
-            name: 'Benchmarking & Production Tooling',
-            duration: '1-2 Weeks',
-            goals: ['Load testing', 'Prometheus metrics', 'CLI tool'],
-            deliverables: ['100k ops/sec verified benchmark suite and CLI client'],
-          },
-        ],
-        learningOutcomes: [
-          `Idiomatic concurrency and memory management in ${language}`,
-          'Designing deterministic binary communication protocols',
-          'Production crash-recovery and observability best practices',
-        ],
-        interviewTalkingPoints: [
-          `Engineered high-throughput ${domain} architecture in ${language} with zero data loss under crash simulations`,
-          'Optimized memory allocations achieving sub-millisecond p99 latency',
-        ],
-        tags: [language, domain, complexity, 'First Principles'],
-        createdAt: new Date().toISOString().split('T')[0],
-      };
+    if (!llm) {
+      const fallbackIdea = buildDemoExpandedIdea({ language, complexity, domain, customPrompt });
+      repository.unshift(fallbackIdea);
       return res.json({ idea: fallbackIdea, isMock: true });
     }
 
@@ -155,13 +81,12 @@ Complexity: ${complexity}
 Domain: ${domain}
 Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
+    const response = await llm.generate(
+      {
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        schemaName: 'project_specification',
+        schema: {
           type: Type.OBJECT,
           properties: {
             title: { type: Type.STRING, description: 'Catchy, realistic project name and subtitle' },
@@ -240,7 +165,8 @@ Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
           ],
         },
       },
-    });
+      model
+    );
 
     const parsed = JSON.parse(response.text || '{}');
     const newIdea: IdeaItem = {
@@ -267,10 +193,136 @@ Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
     // Auto-persist in current session
     repository.unshift(newIdea);
 
-    res.json({ idea: newIdea, model: chosenModel });
+    res.json({ idea: newIdea, model: response.model });
   } catch (error: any) {
     console.error('Error generating idea:', error);
     res.status(500).json({ error: error.message || 'Failed to generate idea' });
+  }
+});
+
+// ----------------------------------------------------
+// 1b. API: Quick Idea Sketches (batch of short ideas)
+// ----------------------------------------------------
+const GOAL_GUIDANCE: Record<ProjectGoal, string> = {
+  Learning: 'favor ideas that teach a core concept and can be built incrementally.',
+  Portfolio: 'favor ideas with a visible, demo-able result that impresses reviewers.',
+  'Interview Prep': 'favor ideas that exercise classic system-design and data-structure trade-offs.',
+  'Real-World Tool': 'favor ideas that solve a genuine everyday problem the builder would actually use.',
+};
+
+const SKETCH_ANGLES = [
+  'an unusual data source',
+  'a gap in developer tooling',
+  'performance-critical internals',
+  'a teaching or visualization tool',
+  'offline-first or local-first design',
+  'something playful or fun to demo',
+  'reliability under failure',
+];
+
+app.post('/api/generate-ideas', async (req: Request, res: Response) => {
+  try {
+    const ideasReq = normalizeGenerateIdeasRequest(req.body);
+
+    if (!llm) {
+      return res.json({ sketches: buildDemoSketches(ideasReq), isMock: true });
+    }
+
+    const languageRule =
+      ideasReq.language === 'Any Language'
+        ? `choose a fitting language per idea and vary them across the batch. Use one of: ${CONCRETE_LANGUAGES.join(', ')}`
+        : ideasReq.language;
+    const domainRule =
+      ideasReq.domain === 'Any Domain'
+        ? `spread ideas across different domains. Use one of: ${CONCRETE_DOMAINS.join(', ')}`
+        : ideasReq.domain;
+
+    const sketchSchema = {
+      type: Type.OBJECT,
+      properties: {
+        ideas: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING, description: 'Short, catchy project name' },
+              pitch: { type: Type.STRING, description: 'One or two sentence elevator pitch' },
+              whyItFits: { type: Type.STRING, description: "One sentence on why it suits the builder's goal" },
+              estimatedHours: { type: Type.STRING, description: 'Realistic time estimate, e.g. 15-25 hours' },
+              tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: '2-5 short tags' },
+              language: { type: Type.STRING, description: 'Primary programming language' },
+              domain: { type: Type.STRING, description: 'Technical domain' },
+            },
+            required: ['title', 'pitch', 'whyItFits', 'estimatedHours', 'tags', 'language', 'domain'],
+          },
+        },
+      },
+      required: ['ideas'],
+    };
+
+    const MAX_SKETCH_ATTEMPTS = 3;
+    let sketches: ReturnType<typeof parseSketches> = [];
+    let avoidTitles = [...ideasReq.avoidTitles];
+    let responseModel = ideasReq.model ?? DEFAULT_SKETCH_MODEL;
+
+    for (let attempt = 0; attempt < MAX_SKETCH_ATTEMPTS && sketches.length < ideasReq.count; attempt++) {
+      const angle = SKETCH_ANGLES[Math.floor(Math.random() * SKETCH_ANGLES.length)];
+      const stillNeeded = ideasReq.count - sketches.length;
+
+      const systemPrompt = `You are the lead engineering architect at IdeaFactory, pitching short software project ideas.
+RULES:
+1. Avoid generic beginner fluff (NO basic todo apps, generic blog CMS, or simple weather wrappers).
+2. Every idea in the batch must be a genuinely different problem, not a rename of another.
+3. Size each idea for this complexity level: ${ideasReq.complexity}.
+4. Builder's goal: ${ideasReq.goal} — ${GOAL_GUIDANCE[ideasReq.goal]}
+5. Language: ${languageRule}.
+6. Domain: ${domainRule}.
+7. Creative angle for this batch: ${angle}.
+${avoidTitles.length ? `8. Do not repeat or lightly rephrase these previous ideas: ${avoidTitles.join('; ')}` : ''}
+
+Return a strictly valid JSON object matching the requested schema.`;
+
+      const response = await llm.generate(
+        {
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: `Pitch exactly ${stillNeeded} distinct project ideas.`,
+            },
+          ],
+          schemaName: 'idea_sketches',
+          schema: sketchSchema,
+        },
+        ideasReq.model ?? DEFAULT_SKETCH_MODEL
+      );
+      responseModel = response.model;
+
+      let parsed: unknown = {};
+      try {
+        parsed = JSON.parse(response.text || '{}');
+      } catch {
+        parsed = {};
+      }
+
+      const batch = parseSketches(parsed, { ...ideasReq, avoidTitles }, Date.now() + attempt);
+      sketches = mergeSketches(sketches, batch, ideasReq.count);
+      avoidTitles = [...ideasReq.avoidTitles, ...sketches.map((sketch) => sketch.title)];
+    }
+
+    if (sketches.length === 0) {
+      return res.status(502).json({ error: 'Model returned no usable ideas' });
+    }
+    if (sketches.length < ideasReq.count) {
+      return res.status(502).json({
+        error: `Model returned only ${sketches.length} of ${ideasReq.count} usable ideas`,
+      });
+    }
+
+    res.json({ sketches, model: responseModel });
+  } catch (error: any) {
+    console.error('Error generating idea sketches:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate ideas' });
   }
 });
 
@@ -286,9 +338,7 @@ app.post('/api/refine-idea', async (req: Request, res: Response) => {
       model = 'gemini-3.8-flash',
     } = req.body;
 
-    const chosenModel = getValidModel(model);
-
-    if (!ai) {
+    if (!llm) {
       return res.json({
         content: `### Refinement Specification: ${idea?.title}\n\n*Note: Running in offline simulation mode.*\n\n**Key Architecture Highlight:**\n- Primary language: ${idea?.language}\n- Target Domain: ${idea?.domain}\n\n1. Establish robust zero-copy memory buffers.\n2. Implement crash recovery with strict checksum validation.\n3. Validate concurrency limits under simulated network jitter.`,
       });
@@ -322,16 +372,12 @@ app.post('/api/refine-idea', async (req: Request, res: Response) => {
     const systemInstruction = `You are a Principal Software Architect at IdeaFactory specializing in ${idea.language} and ${idea.domain}.
 Provide deeply technical, concrete, actionable engineering guidance. Use clean Markdown, well-commented code blocks, and precise terminology. Do not speak down to the engineer.`;
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents: refinementPrompt,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-      },
-    });
+    const response = await llm.generate(
+      { system: systemInstruction, messages: [{ role: 'user', content: refinementPrompt }], temperature: 0.7 },
+      model
+    );
 
-    res.json({ content: response.text, model: chosenModel });
+    res.json({ content: response.text, model: response.model });
   } catch (error: any) {
     console.error('Error refining idea:', error);
     res.status(500).json({ error: error.message || 'Failed to refine idea' });
@@ -350,11 +396,9 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       model = 'gemini-3.8-flash',
     } = req.body;
 
-    const chosenModel = getValidModel(model);
-
-    if (!ai) {
+    if (!llm) {
       return res.json({
-        reply: `Hello! I am your IdeaFactory Architect assistant. (Running in local simulation mode). You asked about: "${messages[messages.length - 1]?.content || 'software architecture'}". To get real-time AI responses, configure GEMINI_API_KEY in the environment.`,
+        reply: `Hello! I am your IdeaFactory Architect assistant. (Running in local simulation mode). You asked about: "${messages[messages.length - 1]?.content || 'software architecture'}". To get real-time AI responses, configure GEMINI_API_KEY (or LLM_PROVIDER=lmstudio) in the environment.`,
       });
     }
 
@@ -392,21 +436,15 @@ Core Architecture: ${currentIdeaContext.coreArchitecture}
 Always keep your answers grounded in this project's domain and language unless the user asks to switch.`;
     }
 
-    // Convert multi-turn conversation format
-    const contents = messages.map((m: any) => ({
-      role: m.role === 'model' ? 'model' : 'user',
-      parts: [{ text: m.content }],
+    // Client history uses 'model' for assistant turns
+    const history = messages.map((m: any) => ({
+      role: m.role === 'model' ? ('assistant' as const) : ('user' as const),
+      content: String(m.content ?? ''),
     }));
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents,
-      config: {
-        systemInstruction: roleInstruction,
-      },
-    });
+    const response = await llm.generate({ system: roleInstruction, messages: history }, model);
 
-    res.json({ reply: response.text, model: chosenModel });
+    res.json({ reply: response.text, model: response.model });
   } catch (error: any) {
     console.error('Error in chat:', error);
     res.status(500).json({ error: error.message || 'Chat service encountered an error' });

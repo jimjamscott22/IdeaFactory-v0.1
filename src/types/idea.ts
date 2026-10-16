@@ -25,6 +25,35 @@ export type ProgrammingLanguage =
   | 'Haskell'
   | 'Any Language';
 
+export type ProjectGoal = 'Learning' | 'Portfolio' | 'Interview Prep' | 'Real-World Tool';
+
+export type DomainChoice = DomainCategory | 'Any Domain';
+
+export type IdeaCount = 3 | 5 | 8;
+
+export interface IdeaSketch {
+  id: string;
+  title: string;
+  pitch: string;
+  whyItFits: string;
+  estimatedHours: string;
+  tags: string[];
+  language: ProgrammingLanguage;
+  domain: DomainCategory;
+  complexity: ComplexityLevel;
+  goal: ProjectGoal;
+}
+
+export interface GenerateIdeasRequest {
+  language: ProgrammingLanguage;
+  complexity: ComplexityLevel;
+  domain: DomainChoice;
+  goal: ProjectGoal;
+  count: IdeaCount;
+  avoidTitles: string[];
+  model?: string;
+}
+
 export interface TechStackConfig {
   language: string;
   framework?: string;
@@ -65,6 +94,8 @@ export interface IdeaItem {
   interviewTalkingPoints: string[];
   tags: string[];
   isBookmarked?: boolean;
+  isDraft?: boolean;
+  goal?: ProjectGoal;
   createdAt: string;
   codeSnippet?: {
     filename: string;
