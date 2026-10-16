@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -16,6 +16,7 @@ import {
   parseSketches,
 } from './src/lib/sketches.ts';
 import type { ProjectGoal } from './src/types/idea.ts';
+import { createLlmClient } from './src/lib/llm.ts';
 
 dotenv.config();
 
@@ -28,31 +29,15 @@ app.use(express.json({ limit: '10mb' }));
 // In-memory repository seeded with initial high-caliber ideas
 let repository: IdeaItem[] = [...SEED_IDEAS];
 
-// Initialize Google GenAI client (server-side only)
-const apiKey = process.env.GEMINI_API_KEY || '';
-const ai = apiKey
-  ? new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    })
-  : null;
+// LLM client (server-side only): Gemini or LM Studio per env, null means demo mode.
+const llm = createLlmClient();
+console.log(
+  llm ? `LLM provider: ${llm.provider}` : 'LLM provider: none (demo mode, set GEMINI_API_KEY or LLM_PROVIDER=lmstudio)'
+);
 
-// Helper: Normalize model name to ensure valid modern Gemini models
-function getValidModel(requestedModel?: string): string {
-  if (!requestedModel) return 'gemini-3.8-flash';
-  const valid = [
-    'gemini-3.8-flash',
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-3.1-pro-preview',
-  ];
-  if (valid.includes(requestedModel)) return requestedModel;
-  return 'gemini-3.8-flash';
-}
+app.get('/api/llm-status', async (_req: Request, res: Response) => {
+  res.json(llm ? await llm.status() : { provider: 'demo', label: 'Demo mode' });
+});
 
 // ----------------------------------------------------
 // 1. API: Generate Idea using Gemini 3.8 Flash
@@ -68,9 +53,7 @@ app.post('/api/generate-idea', async (req: Request, res: Response) => {
       model = 'gemini-3.8-flash',
     } = req.body;
 
-    const chosenModel = getValidModel(model);
-
-    if (!ai) {
+    if (!llm) {
       // Graceful offline mock if API key isn't injected yet
       const fallbackIdea: IdeaItem = {
         id: `gen-${Date.now()}`,
@@ -164,13 +147,12 @@ Complexity: ${complexity}
 Domain: ${domain}
 Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
+    const response = await llm.generate(
+      {
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        schemaName: 'project_specification',
+        schema: {
           type: Type.OBJECT,
           properties: {
             title: { type: Type.STRING, description: 'Catchy, realistic project name and subtitle' },
@@ -249,7 +231,8 @@ Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
           ],
         },
       },
-    });
+      model
+    );
 
     const parsed = JSON.parse(response.text || '{}');
     const newIdea: IdeaItem = {
@@ -276,7 +259,7 @@ Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
     // Auto-persist in current session
     repository.unshift(newIdea);
 
-    res.json({ idea: newIdea, model: chosenModel });
+    res.json({ idea: newIdea, model: response.model });
   } catch (error: any) {
     console.error('Error generating idea:', error);
     res.status(500).json({ error: error.message || 'Failed to generate idea' });
@@ -307,11 +290,10 @@ app.post('/api/generate-ideas', async (req: Request, res: Response) => {
   try {
     const ideasReq = normalizeGenerateIdeasRequest(req.body);
 
-    if (!ai) {
+    if (!llm) {
       return res.json({ sketches: buildDemoSketches(ideasReq), isMock: true });
     }
 
-    const chosenModel = getValidModel(ideasReq.model ?? DEFAULT_SKETCH_MODEL);
     const angle = SKETCH_ANGLES[Math.floor(Math.random() * SKETCH_ANGLES.length)];
     const languageRule =
       ideasReq.language === 'Any Language'
@@ -335,13 +317,12 @@ ${ideasReq.avoidTitles.length ? `8. Do not repeat or lightly rephrase these prev
 
 Return a strictly valid JSON object matching the requested schema.`;
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents: `Pitch exactly ${ideasReq.count} project ideas.`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
+    const response = await llm.generate(
+      {
+        system: systemPrompt,
+        messages: [{ role: 'user', content: `Pitch exactly ${ideasReq.count} project ideas.` }],
+        schemaName: 'idea_sketches',
+        schema: {
           type: Type.OBJECT,
           properties: {
             ideas: {
@@ -364,7 +345,8 @@ Return a strictly valid JSON object matching the requested schema.`;
           required: ['ideas'],
         },
       },
-    });
+      ideasReq.model ?? DEFAULT_SKETCH_MODEL
+    );
 
     let parsed: unknown = {};
     try {
@@ -378,7 +360,7 @@ Return a strictly valid JSON object matching the requested schema.`;
       return res.status(502).json({ error: 'Model returned no usable ideas' });
     }
 
-    res.json({ sketches, model: chosenModel });
+    res.json({ sketches, model: response.model });
   } catch (error: any) {
     console.error('Error generating idea sketches:', error);
     res.status(500).json({ error: error.message || 'Failed to generate ideas' });
@@ -397,9 +379,7 @@ app.post('/api/refine-idea', async (req: Request, res: Response) => {
       model = 'gemini-3.8-flash',
     } = req.body;
 
-    const chosenModel = getValidModel(model);
-
-    if (!ai) {
+    if (!llm) {
       return res.json({
         content: `### Refinement Specification: ${idea?.title}\n\n*Note: Running in offline simulation mode.*\n\n**Key Architecture Highlight:**\n- Primary language: ${idea?.language}\n- Target Domain: ${idea?.domain}\n\n1. Establish robust zero-copy memory buffers.\n2. Implement crash recovery with strict checksum validation.\n3. Validate concurrency limits under simulated network jitter.`,
       });
@@ -433,16 +413,12 @@ app.post('/api/refine-idea', async (req: Request, res: Response) => {
     const systemInstruction = `You are a Principal Software Architect at IdeaFactory specializing in ${idea.language} and ${idea.domain}.
 Provide deeply technical, concrete, actionable engineering guidance. Use clean Markdown, well-commented code blocks, and precise terminology. Do not speak down to the engineer.`;
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents: refinementPrompt,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-      },
-    });
+    const response = await llm.generate(
+      { system: systemInstruction, messages: [{ role: 'user', content: refinementPrompt }], temperature: 0.7 },
+      model
+    );
 
-    res.json({ content: response.text, model: chosenModel });
+    res.json({ content: response.text, model: response.model });
   } catch (error: any) {
     console.error('Error refining idea:', error);
     res.status(500).json({ error: error.message || 'Failed to refine idea' });
@@ -461,11 +437,9 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       model = 'gemini-3.8-flash',
     } = req.body;
 
-    const chosenModel = getValidModel(model);
-
-    if (!ai) {
+    if (!llm) {
       return res.json({
-        reply: `Hello! I am your IdeaFactory Architect assistant. (Running in local simulation mode). You asked about: "${messages[messages.length - 1]?.content || 'software architecture'}". To get real-time AI responses, configure GEMINI_API_KEY in the environment.`,
+        reply: `Hello! I am your IdeaFactory Architect assistant. (Running in local simulation mode). You asked about: "${messages[messages.length - 1]?.content || 'software architecture'}". To get real-time AI responses, configure GEMINI_API_KEY (or LLM_PROVIDER=lmstudio) in the environment.`,
       });
     }
 
@@ -503,21 +477,15 @@ Core Architecture: ${currentIdeaContext.coreArchitecture}
 Always keep your answers grounded in this project's domain and language unless the user asks to switch.`;
     }
 
-    // Convert multi-turn conversation format
-    const contents = messages.map((m: any) => ({
-      role: m.role === 'model' ? 'model' : 'user',
-      parts: [{ text: m.content }],
+    // Client history uses 'model' for assistant turns
+    const history = messages.map((m: any) => ({
+      role: m.role === 'model' ? ('assistant' as const) : ('user' as const),
+      content: String(m.content ?? ''),
     }));
 
-    const response = await ai.models.generateContent({
-      model: chosenModel,
-      contents,
-      config: {
-        systemInstruction: roleInstruction,
-      },
-    });
+    const response = await llm.generate({ system: roleInstruction, messages: history }, model);
 
-    res.json({ reply: response.text, model: chosenModel });
+    res.json({ reply: response.text, model: response.model });
   } catch (error: any) {
     console.error('Error in chat:', error);
     res.status(500).json({ error: error.message || 'Chat service encountered an error' });

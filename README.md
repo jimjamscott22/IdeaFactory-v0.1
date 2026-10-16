@@ -2,7 +2,7 @@
 
 IdeaFactory turns software project ideas into structured technical specifications. Choose a language, domain, and difficulty level, then explore architecture, implementation phases, technical challenges, and interview talking points. Refine a concept with AI assistance, discuss it with an architecture assistant, and export the results for use outside the app.
 
-This repository contains a React and TypeScript frontend with an Express backend. It supports Google Gemini through the server-side Google GenAI SDK and includes a demo mode that works without an API key.
+This repository contains a React and TypeScript frontend with an Express backend. It supports Google Gemini through the server-side Google GenAI SDK, a local model through LM Studio, and a demo mode that works without either.
 
 ## Features
 
@@ -24,7 +24,7 @@ The generator offers Rust, Go, Python, TypeScript, C++, Zig, Elixir, Kotlin, Swi
 IdeaFactory is a prototype with working local UI and HTTP endpoints. These details matter when running or extending it:
 
 - **Storage is temporary.** The Express process keeps the catalog in memory and initializes it from `src/data/seedIdeas.ts` on startup. Generated ideas, bookmark changes, and deletions are lost when the server restarts. Export anything you want to retain; there is currently no catalog import workflow.
-- **Demo mode uses canned responses.** With `GEMINI_API_KEY` unset or empty, generation, refinement, and chat return local sample output. Demo generation uses a fixed template and does not provide genuine AI reasoning about custom prompts or constraints. Quick ideas in demo mode are drawn from a local pool of 30 hand-written ideas.
+- **Demo mode uses canned responses.** With `GEMINI_API_KEY` unset or empty and no `LLM_PROVIDER`, generation, refinement, and chat return local sample output. Demo generation uses a fixed template and does not provide genuine AI reasoning about custom prompts or constraints. Quick ideas in demo mode are drawn from a local pool of 30 hand-written ideas.
 - **PostgreSQL and MCP are simulations.** The SQL runner matches query text against canned behaviors; it does not execute SQL. The MCP sandbox dispatches ordinary HTTP requests to local handlers; it is not a standards-compliant MCP server or an automatic Gemini tool integration.
 - **Architecture examples are illustrative.** Go/Rust services, Python AI services, database schemas, and Docker Compose content shown in the Architecture view are examples embedded in the frontend. The executable backend in this repository is `server.ts`.
 - **Access controls are not implemented.** The catalog is shared by clients of the same server process. There are no user accounts, authentication, or API rate limits. The server binds to `0.0.0.0`; account for that before exposing it beyond local development.
@@ -34,7 +34,7 @@ IdeaFactory is a prototype with working local UI and HTTP endpoints. These detai
 ### Requirements
 
 - Node.js **22.12 or newer** and npm. Node.js 24 is a suitable baseline. The installed Vite toolchain also supports Node.js 20.19+, but the commands below use `tsx` to run the TypeScript backend consistently.
-- A Gemini API key if you want live AI responses. No key, database, Docker installation, or MCP client is required for demo mode.
+- A Gemini API key or a running [LM Studio](https://lmstudio.ai) server if you want live AI responses. No key, database, Docker installation, or MCP client is required for demo mode.
 
 ### Run locally
 
@@ -70,11 +70,33 @@ gemini-3.1-pro-preview
 
 These are the IDs configured in the source, not a guarantee that your Gemini account can use them. Live requests depend on provider availability, access, and quota. If a model is unavailable, update the allowlist and default in `server.ts` and the selectors in the generator, refiner, and chat components together. Requests with an unrecognized model ID fall back to the configured default.
 
+### Use a local model with LM Studio
+
+Set `LLM_PROVIDER=lmstudio` to send every generation, refinement, and chat request to LM Studio instead of Gemini. This is useful when Gemini is unavailable or over quota, and it keeps prompts on your machine.
+
+1. In LM Studio, load a chat model and start the local server (Developer tab, default `http://localhost:1234`).
+2. Add to `.env` (see `.env.example`):
+
+   ```text
+   LLM_PROVIDER="lmstudio"
+   ```
+
+3. Restart the app. The navbar badge shows `LM Studio · <model>` when the server is reachable, and `LM Studio · not ready` when it is not.
+
+The app uses LM Studio's OpenAI-compatible `/v1/chat/completions` route and asks for structured JSON output on the idea generators. Without `LMSTUDIO_MODEL`, it uses the chat model LM Studio currently reports as loaded. `LLM_PROVIDER=lmstudio` takes precedence over `GEMINI_API_KEY`, so a Gemini key can stay in `.env`.
+
+The model selectors in the UI list Gemini IDs and are ignored in LM Studio mode. Results depend on the local model: small models may produce weaker specs or invalid JSON, and `<think>` reasoning blocks are stripped from replies. Unreachable servers and timeouts are reported in the UI with the address that failed.
+
 ### Environment variables
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | Enables server-side Gemini calls. Unset or empty enables demo responses. | Unset |
+| `GEMINI_API_KEY` | Enables server-side Gemini calls. Unset or empty enables demo responses unless `LLM_PROVIDER=lmstudio`. | Unset |
+| `LLM_PROVIDER` | `gemini` or `lmstudio`. An unknown value stops the server at startup. | Gemini when a key is set, otherwise demo |
+| `LMSTUDIO_BASE_URL` | LM Studio's OpenAI-compatible base URL. | `http://localhost:1234/v1` |
+| `LMSTUDIO_MODEL` | Model identifier to request. Blank uses the loaded chat model. | Blank |
+| `LMSTUDIO_API_KEY` | Bearer token, only if authentication is enabled in LM Studio. | Unset |
+| `LMSTUDIO_TIMEOUT_MS` | How long to wait for a local completion. | `300000` |
 | `PORT` | Port used by the Express server. | `3000` |
 | `NODE_ENV` | Set to `production` to serve the built frontend from `dist/` instead of Vite middleware. | Development behavior when unset |
 | `DISABLE_HMR` | Set to `true` to disable Vite hot module replacement and file watching. | HMR enabled |
@@ -153,6 +175,7 @@ All endpoints use JSON and are implemented in `server.ts`.
 | `POST` | `/api/generate-ideas` | Return 3, 5, or 8 short idea sketches; accepts `language`, `complexity`, `domain`, `goal`, `count`, `avoidTitles`, and `model`. Sketches are not added to the catalog. |
 | `POST` | `/api/refine-idea` | Refine an `idea` using `refinementType`, optional `customQuestion`, and `model`. |
 | `POST` | `/api/chat` | Respond to `messages` with a selected `role`, optional `currentIdeaContext`, and `model`. |
+| `GET` | `/api/llm-status` | Report the active provider (`gemini`, `lmstudio`, or `demo`), a display label, and for LM Studio the model and whether it is reachable. |
 | `GET` | `/api/ideas` | Return the current catalog and total count. |
 | `POST` | `/api/ideas` | Add an idea to the current catalog. |
 | `PUT` | `/api/ideas/:id` | Merge supplied fields into an existing idea. |
@@ -164,7 +187,7 @@ All endpoints use JSON and are implemented in `server.ts`.
 
 ```text
 .
-├── server.ts                     # Express API, Gemini integration, in-memory storage
+├── server.ts                     # Express API, LLM routing, in-memory storage
 ├── src/
 │   ├── App.tsx                   # View navigation and shared idea state
 │   ├── main.tsx                  # React entry point
@@ -184,6 +207,7 @@ All endpoints use JSON and are implemented in `server.ts`.
 │   ├── data/demoSketches.ts       # Demo-mode quick ideas
 │   ├── lib/sketches.ts           # Quick-idea validation, parsing, demo selection, drafts
 │   ├── lib/ideasApi.ts           # Client fetch helpers for ideas, drafts, expansion
+│   ├── lib/llm.ts                # Server-side Gemini / LM Studio client
 │   ├── types/idea.ts              # Idea, chat, and tool-call types
 │   └── utils/export.ts           # Markdown, issue-template, and download helpers
 ├── .env.example                  # Environment template
@@ -197,7 +221,7 @@ The frontend uses React 19, Tailwind CSS 4, Lucide icons, and Motion. Vite handl
 
 ## Contributing
 
-Keep changes focused and consistent with the existing components and shared types. Update this README when changing setup, configuration, API behavior, or storage. Run the TypeScript check and frontend build, then exercise the affected workflow through the full Express app. Distinguish demo-mode checks from live Gemini verification in your change description.
+Keep changes focused and consistent with the existing components and shared types. Update this README when changing setup, configuration, API behavior, or storage. Run the TypeScript check and frontend build, then exercise the affected workflow through the full Express app. Distinguish demo-mode checks from live Gemini or LM Studio verification in your change description.
 
 ## License
 

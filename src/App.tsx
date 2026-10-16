@@ -27,6 +27,7 @@ export default function App() {
   // Ideas tab state lives here so it survives tab switches.
   const [ideasOptions, setIdeasOptions] = useState<IdeasOptions>(DEFAULT_IDEAS_OPTIONS);
   const [sketchBatch, setSketchBatch] = useState<SketchBatch>(EMPTY_SKETCH_BATCH);
+  const [llmLabel, setLlmLabel] = useState('Gemini 3.8 Flash');
 
   // Load ideas from backend API on mount
   useEffect(() => {
@@ -43,6 +44,16 @@ export default function App() {
       .catch((err) => {
         console.warn('Could not fetch ideas from server, using pre-seeded catalog:', err);
       });
+  }, []);
+
+  // Which provider answers (Gemini, LM Studio, or demo) is decided by the server's env.
+  useEffect(() => {
+    fetch('/api/llm-status')
+      .then((res) => res.json())
+      .then((status) => {
+        if (typeof status.label === 'string') setLlmLabel(status.label);
+      })
+      .catch(() => {});
   }, []);
 
   const handleToggleBookmark = async (targetIdea: IdeaItem) => {
@@ -145,6 +156,7 @@ export default function App() {
           setActiveTab('generator');
         }}
         hasActiveIdea={!!currentIdea}
+        llmLabel={llmLabel}
       />
 
       {/* Main Content Area */}
@@ -241,7 +253,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4 text-[11px] font-mono text-slate-400">
-            <span>Powered by Gemini 3.8 Flash</span>
+            <span>Powered by {llmLabel}</span>
             <span aria-hidden="true">·</span>
             <span>Model Context Protocol (MCP)</span>
             <span aria-hidden="true">·</span>

@@ -18,6 +18,7 @@ interface NavbarProps {
   repositoryCount: number;
   onNewBrainstorm: () => void;
   hasActiveIdea: boolean;
+  llmLabel: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -26,6 +27,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   repositoryCount,
   onNewBrainstorm,
   hasActiveIdea,
+  llmLabel,
 }) => {
   const navItems: { id: ActiveTab; label: string; icon: React.ReactNode; count?: number }[] = [
     {
@@ -78,7 +80,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-base font-semibold tracking-tight text-slate-100 flex items-center gap-1.5">
                   IdeaFactory
                   <span className="text-[10px] font-mono text-emerald-400/90 uppercase tracking-widest px-1.5 py-0.5 rounded bg-emerald-950/50 border border-emerald-800/40">
-                    Gemini 3.8 Flash
+                    {llmLabel}
                   </span>
                 </span>
                 <p className="text-[11px] text-slate-400 tracking-normal hidden sm:block">
