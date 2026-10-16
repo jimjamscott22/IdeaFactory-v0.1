@@ -7,6 +7,15 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { SEED_IDEAS } from './src/data/seedIdeas.ts';
 import { IdeaItem } from './src/types/idea.ts';
+import {
+  CONCRETE_DOMAINS,
+  CONCRETE_LANGUAGES,
+  DEFAULT_SKETCH_MODEL,
+  buildDemoSketches,
+  normalizeGenerateIdeasRequest,
+  parseSketches,
+} from './src/lib/sketches.ts';
+import type { ProjectGoal } from './src/types/idea.ts';
 
 dotenv.config();
 
@@ -271,6 +280,108 @@ Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
   } catch (error: any) {
     console.error('Error generating idea:', error);
     res.status(500).json({ error: error.message || 'Failed to generate idea' });
+  }
+});
+
+// ----------------------------------------------------
+// 1b. API: Quick Idea Sketches (batch of short ideas)
+// ----------------------------------------------------
+const GOAL_GUIDANCE: Record<ProjectGoal, string> = {
+  Learning: 'favor ideas that teach a core concept and can be built incrementally.',
+  Portfolio: 'favor ideas with a visible, demo-able result that impresses reviewers.',
+  'Interview Prep': 'favor ideas that exercise classic system-design and data-structure trade-offs.',
+  'Real-World Tool': 'favor ideas that solve a genuine everyday problem the builder would actually use.',
+};
+
+const SKETCH_ANGLES = [
+  'an unusual data source',
+  'a gap in developer tooling',
+  'performance-critical internals',
+  'a teaching or visualization tool',
+  'offline-first or local-first design',
+  'something playful or fun to demo',
+  'reliability under failure',
+];
+
+app.post('/api/generate-ideas', async (req: Request, res: Response) => {
+  try {
+    const ideasReq = normalizeGenerateIdeasRequest(req.body);
+
+    if (!ai) {
+      return res.json({ sketches: buildDemoSketches(ideasReq), isMock: true });
+    }
+
+    const chosenModel = getValidModel(ideasReq.model ?? DEFAULT_SKETCH_MODEL);
+    const angle = SKETCH_ANGLES[Math.floor(Math.random() * SKETCH_ANGLES.length)];
+    const languageRule =
+      ideasReq.language === 'Any Language'
+        ? `choose a fitting language per idea and vary them across the batch. Use one of: ${CONCRETE_LANGUAGES.join(', ')}`
+        : ideasReq.language;
+    const domainRule =
+      ideasReq.domain === 'Any Domain'
+        ? `spread ideas across different domains. Use one of: ${CONCRETE_DOMAINS.join(', ')}`
+        : ideasReq.domain;
+
+    const systemPrompt = `You are the lead engineering architect at IdeaFactory, pitching short software project ideas.
+RULES:
+1. Avoid generic beginner fluff (NO basic todo apps, generic blog CMS, or simple weather wrappers).
+2. Every idea in the batch must be a genuinely different problem, not a rename of another.
+3. Size each idea for this complexity level: ${ideasReq.complexity}.
+4. Builder's goal: ${ideasReq.goal} — ${GOAL_GUIDANCE[ideasReq.goal]}
+5. Language: ${languageRule}.
+6. Domain: ${domainRule}.
+7. Creative angle for this batch: ${angle}.
+${ideasReq.avoidTitles.length ? `8. Do not repeat or lightly rephrase these previous ideas: ${ideasReq.avoidTitles.join('; ')}` : ''}
+
+Return a strictly valid JSON object matching the requested schema.`;
+
+    const response = await ai.models.generateContent({
+      model: chosenModel,
+      contents: `Pitch exactly ${ideasReq.count} project ideas.`,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            ideas: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING, description: 'Short, catchy project name' },
+                  pitch: { type: Type.STRING, description: 'One or two sentence elevator pitch' },
+                  whyItFits: { type: Type.STRING, description: "One sentence on why it suits the builder's goal" },
+                  estimatedHours: { type: Type.STRING, description: 'Realistic time estimate, e.g. 15-25 hours' },
+                  tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: '2-5 short tags' },
+                  language: { type: Type.STRING, description: 'Primary programming language' },
+                  domain: { type: Type.STRING, description: 'Technical domain' },
+                },
+                required: ['title', 'pitch', 'whyItFits', 'estimatedHours', 'tags', 'language', 'domain'],
+              },
+            },
+          },
+          required: ['ideas'],
+        },
+      },
+    });
+
+    let parsed: unknown = {};
+    try {
+      parsed = JSON.parse(response.text || '{}');
+    } catch {
+      parsed = {};
+    }
+
+    const sketches = parseSketches(parsed, ideasReq);
+    if (sketches.length === 0) {
+      return res.status(502).json({ error: 'Model returned no usable ideas' });
+    }
+
+    res.json({ sketches, model: chosenModel });
+  } catch (error: any) {
+    console.error('Error generating idea sketches:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate ideas' });
   }
 });
 

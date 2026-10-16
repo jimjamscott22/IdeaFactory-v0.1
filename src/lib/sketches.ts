@@ -9,7 +9,7 @@ import type {
   ProgrammingLanguage,
   ProjectGoal,
 } from '../types/idea';
-import { DEMO_SKETCH_POOL, GOAL_REASONS, type DemoSketchSeed } from '../data/demoSketches';
+import { DEMO_SKETCH_POOL, GOAL_REASONS, type DemoSketchSeed } from '../data/demoSketches.ts';
 
 export const LANGUAGE_OPTIONS: ProgrammingLanguage[] = [
   'Any Language',
