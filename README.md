@@ -8,6 +8,7 @@ This repository contains a React and TypeScript frontend with an Express backend
 
 | Workspace | What you can do |
 | --- | --- |
+| **Ideas** | Pick a language, level, domain, goal, and batch size (3, 5, or 8) with one click each, then generate several short project ideas at once. Save an idea to the Repository as a draft or expand it into a full specification. |
 | **Generator** | Generate a project specification using language, complexity, domain, optional constraints, and a custom prompt. |
 | **Spec Refiner** | Request starter code, PostgreSQL DDL, failure analysis, an implementation roadmap, or interview preparation for a selected idea. |
 | **Repository** | Browse seeded and generated ideas, search and filter the catalog, switch between grid and table views, bookmark ideas, and delete entries. |
@@ -23,7 +24,7 @@ The generator offers Rust, Go, Python, TypeScript, C++, Zig, Elixir, Kotlin, Swi
 IdeaFactory is a prototype with working local UI and HTTP endpoints. These details matter when running or extending it:
 
 - **Storage is temporary.** The Express process keeps the catalog in memory and initializes it from `src/data/seedIdeas.ts` on startup. Generated ideas, bookmark changes, and deletions are lost when the server restarts. Export anything you want to retain; there is currently no catalog import workflow.
-- **Demo mode uses canned responses.** With `GEMINI_API_KEY` unset or empty, generation, refinement, and chat return local sample output. Demo generation uses a fixed template and does not provide genuine AI reasoning about custom prompts or constraints.
+- **Demo mode uses canned responses.** With `GEMINI_API_KEY` unset or empty, generation, refinement, and chat return local sample output. Demo generation uses a fixed template and does not provide genuine AI reasoning about custom prompts or constraints. Quick ideas in demo mode are drawn from a local pool of 30 hand-written ideas.
 - **PostgreSQL and MCP are simulations.** The SQL runner matches query text against canned behaviors; it does not execute SQL. The MCP sandbox dispatches ordinary HTTP requests to local handlers; it is not a standards-compliant MCP server or an automatic Gemini tool integration.
 - **Architecture examples are illustrative.** Go/Rust services, Python AI services, database schemas, and Docker Compose content shown in the Architecture view are examples embedded in the frontend. The executable backend in this repository is `server.ts`.
 - **Access controls are not implemented.** The catalog is shared by clients of the same server process. There are no user accounts, authentication, or API rate limits. The server binds to `0.0.0.0`; account for that before exposing it beyond local development.
@@ -87,7 +88,7 @@ PORT=3001 npm run dev
 
 ## Typical workflow
 
-1. Open **Generator**, choose the project parameters, and generate a specification. You can also start by inspecting a seeded idea in **Repository**.
+1. Open **Ideas**, click your options, and press **Generate ideas**. Generate again for a fresh batch. Save promising ideas as drafts, or expand one straight into a full specification in **Generator**. You can also start in **Generator** directly or inspect a seeded idea in **Repository**.
 2. Review its overview, architecture flow, challenges, roadmap, and interview notes.
 3. Open it in **Spec Refiner** to request a more detailed artifact, or in **AI Architect Chat** to discuss design decisions with project context attached.
 4. Bookmark useful ideas for the current server session and export specifications or catalog entries before restarting the backend.
@@ -99,6 +100,7 @@ PORT=3001 npm run dev
 | --- | --- |
 | `npm run dev` | Run the Express backend and Vite development middleware through `tsx`. |
 | `npm run lint` | Run TypeScript checking with `tsc --noEmit`; this is not an ESLint check. |
+| `npm test` | Run the Vitest unit tests once. |
 | `npm run build` | Build the frontend into `dist/`. |
 | `npm run preview` | Preview the frontend build with Vite. It does not start the Express API. |
 | `npm start` | Run `node server.ts`; this depends on the Node runtime's TypeScript support and module resolution. Prefer the explicit `tsx` command below for the full app. |
@@ -121,10 +123,11 @@ Run the available checks before submitting a change:
 
 ```bash
 npm run lint
+npm test
 npm run build
 ```
 
-There is currently no automated test suite or `npm test` script. For a basic API smoke check while the development server is running:
+Unit tests cover the quick-idea logic in `src/lib/`; there are no UI tests. For a basic API smoke check while the development server is running:
 
 ```bash
 curl http://localhost:3000/api/ideas
@@ -132,9 +135,13 @@ curl http://localhost:3000/api/ideas
 curl -X POST http://localhost:3000/api/generate-idea \
   -H 'Content-Type: application/json' \
   -d '{"language":"Rust","complexity":"Advanced","domain":"Distributed Systems"}'
+
+curl -X POST http://localhost:3000/api/generate-ideas \
+  -H 'Content-Type: application/json' \
+  -d '{"domain":"Database Engines","goal":"Learning","count":3}'
 ```
 
-The second request adds an idea to the in-memory catalog. With a real key configured, it makes a Gemini request.
+The second request adds an idea to the in-memory catalog. With a real key configured, it makes a Gemini request. The third request returns short idea sketches and does not add anything to the catalog.
 
 ## API overview
 
@@ -143,6 +150,7 @@ All endpoints use JSON and are implemented in `server.ts`.
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/generate-idea` | Generate and add an idea; accepts `language`, `complexity`, `domain`, `customPrompt`, `constraints`, and `model`. |
+| `POST` | `/api/generate-ideas` | Return 3, 5, or 8 short idea sketches; accepts `language`, `complexity`, `domain`, `goal`, `count`, `avoidTitles`, and `model`. Sketches are not added to the catalog. |
 | `POST` | `/api/refine-idea` | Refine an `idea` using `refinementType`, optional `customQuestion`, and `model`. |
 | `POST` | `/api/chat` | Respond to `messages` with a selected `role`, optional `currentIdeaContext`, and `model`. |
 | `GET` | `/api/ideas` | Return the current catalog and total count. |
@@ -162,6 +170,9 @@ All endpoints use JSON and are implemented in `server.ts`.
 │   ├── main.tsx                  # React entry point
 │   ├── index.css                 # Global styles and Tailwind imports
 │   ├── components/
+│   │   ├── IdeasView.tsx
+│   │   ├── SketchCard.tsx
+│   │   ├── DraftBadge.tsx
 │   │   ├── GeneratorView.tsx
 │   │   ├── RefinerView.tsx
 │   │   ├── RepositoryView.tsx
@@ -170,6 +181,9 @@ All endpoints use JSON and are implemented in `server.ts`.
 │   │   ├── IdeaDetailModal.tsx
 │   │   └── Navbar.tsx
 │   ├── data/seedIdeas.ts          # Initial project catalog
+│   ├── data/demoSketches.ts       # Demo-mode quick ideas
+│   ├── lib/sketches.ts           # Quick-idea validation, parsing, demo selection, drafts
+│   ├── lib/ideasApi.ts           # Client fetch helpers for ideas, drafts, expansion
 │   ├── types/idea.ts              # Idea, chat, and tool-call types
 │   └── utils/export.ts           # Markdown, issue-template, and download helpers
 ├── .env.example                  # Environment template
