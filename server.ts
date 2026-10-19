@@ -8,16 +8,18 @@ import fs from 'fs';
 import { SEED_IDEAS } from './src/data/seedIdeas.ts';
 import { IdeaItem } from './src/types/idea.ts';
 import {
-  CONCRETE_DOMAINS,
-  CONCRETE_LANGUAGES,
   DEFAULT_SKETCH_MODEL,
+  SKETCH_ANGLES,
+  buildChatPrompts,
   buildDemoExpandedIdea,
   buildDemoSketches,
+  buildGenerateIdeaPrompts,
+  buildGenerateIdeasPrompts,
+  buildRefinePrompts,
   mergeSketches,
   normalizeGenerateIdeasRequest,
   parseSketches,
 } from './src/lib/sketches.ts';
-import type { ProjectGoal } from './src/types/idea.ts';
 import { createLlmClient } from './src/lib/llm.ts';
 
 dotenv.config();
@@ -47,43 +49,34 @@ app.get('/api/llm-status', async (_req: Request, res: Response) => {
 app.post('/api/generate-idea', async (req: Request, res: Response) => {
   try {
     const {
-      language = 'Rust',
-      complexity = 'Advanced',
-      domain = 'Distributed Systems',
       customPrompt = '',
       constraints = [],
       model = 'gemini-3.8-flash',
     } = req.body;
+    const { system, userPrompt, language, complexity, domain } = buildGenerateIdeaPrompts({
+      language: req.body?.language,
+      complexity: req.body?.complexity,
+      domain: req.body?.domain,
+      customPrompt,
+      constraints,
+    });
 
     if (!llm) {
-      const fallbackIdea = buildDemoExpandedIdea({ language, complexity, domain, customPrompt });
+      const fallbackIdea = buildDemoExpandedIdea({
+        language,
+        complexity,
+        domain,
+        customPrompt,
+        sourceTitle: req.body?.sourceTitle,
+        sourcePitch: req.body?.sourcePitch,
+      });
       repository.unshift(fallbackIdea);
       return res.json({ idea: fallbackIdea, isMock: true });
     }
 
-    const systemPrompt = `You are the lead engineering architect at IdeaFactory.
-Your goal is to brainstorm a novel, authentic, deeply technical software development project idea.
-CRITICAL QUALITY RULES:
-1. Avoid generic beginner fluff (NO basic Todo apps, generic blog CMS, or simple weather wrappers).
-2. The idea must be compelling, systems-level or architecturally ambitious, suitable for technical portfolio and deep learning.
-3. Tailor specifically to the user's criteria:
-   - Primary Language: ${language}
-   - Complexity Level: ${complexity}
-   - Technical Domain: ${domain}
-   ${customPrompt ? `- User's Specific Vision / Focus: ${customPrompt}` : ''}
-   ${constraints?.length ? `- Constraints & Requirements: ${constraints.join(', ')}` : ''}
-
-You must return a strictly valid JSON object matching the requested schema.`;
-
-    const userPrompt = `Generate a comprehensive technical project specification for:
-Language: ${language}
-Complexity: ${complexity}
-Domain: ${domain}
-Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
-
     const response = await llm.generate(
       {
-        system: systemPrompt,
+        system,
         messages: [{ role: 'user', content: userPrompt }],
         schemaName: 'project_specification',
         schema: {
@@ -203,23 +196,6 @@ Focus: ${customPrompt || 'Novel, ambitious real-world project'}`;
 // ----------------------------------------------------
 // 1b. API: Quick Idea Sketches (batch of short ideas)
 // ----------------------------------------------------
-const GOAL_GUIDANCE: Record<ProjectGoal, string> = {
-  Learning: 'favor ideas that teach a core concept and can be built incrementally.',
-  Portfolio: 'favor ideas with a visible, demo-able result that impresses reviewers.',
-  'Interview Prep': 'favor ideas that exercise classic system-design and data-structure trade-offs.',
-  'Real-World Tool': 'favor ideas that solve a genuine everyday problem the builder would actually use.',
-};
-
-const SKETCH_ANGLES = [
-  'an unusual data source',
-  'a gap in developer tooling',
-  'performance-critical internals',
-  'a teaching or visualization tool',
-  'offline-first or local-first design',
-  'something playful or fun to demo',
-  'reliability under failure',
-];
-
 app.post('/api/generate-ideas', async (req: Request, res: Response) => {
   try {
     const ideasReq = normalizeGenerateIdeasRequest(req.body);
@@ -227,15 +203,6 @@ app.post('/api/generate-ideas', async (req: Request, res: Response) => {
     if (!llm) {
       return res.json({ sketches: buildDemoSketches(ideasReq), isMock: true });
     }
-
-    const languageRule =
-      ideasReq.language === 'Any Language'
-        ? `choose a fitting language per idea and vary them across the batch. Use one of: ${CONCRETE_LANGUAGES.join(', ')}`
-        : ideasReq.language;
-    const domainRule =
-      ideasReq.domain === 'Any Domain'
-        ? `spread ideas across different domains. Use one of: ${CONCRETE_DOMAINS.join(', ')}`
-        : ideasReq.domain;
 
     const sketchSchema = {
       type: Type.OBJECT,
@@ -268,27 +235,20 @@ app.post('/api/generate-ideas', async (req: Request, res: Response) => {
     for (let attempt = 0; attempt < MAX_SKETCH_ATTEMPTS && sketches.length < ideasReq.count; attempt++) {
       const angle = SKETCH_ANGLES[Math.floor(Math.random() * SKETCH_ANGLES.length)];
       const stillNeeded = ideasReq.count - sketches.length;
-
-      const systemPrompt = `You are the lead engineering architect at IdeaFactory, pitching short software project ideas.
-RULES:
-1. Avoid generic beginner fluff (NO basic todo apps, generic blog CMS, or simple weather wrappers).
-2. Every idea in the batch must be a genuinely different problem, not a rename of another.
-3. Size each idea for this complexity level: ${ideasReq.complexity}.
-4. Builder's goal: ${ideasReq.goal} — ${GOAL_GUIDANCE[ideasReq.goal]}
-5. Language: ${languageRule}.
-6. Domain: ${domainRule}.
-7. Creative angle for this batch: ${angle}.
-${avoidTitles.length ? `8. Do not repeat or lightly rephrase these previous ideas: ${avoidTitles.join('; ')}` : ''}
-
-Return a strictly valid JSON object matching the requested schema.`;
+      const { system, userPrompt } = buildGenerateIdeasPrompts({
+        req: ideasReq,
+        stillNeeded,
+        angle,
+        avoidTitles,
+      });
 
       const response = await llm.generate(
         {
-          system: systemPrompt,
+          system,
           messages: [
             {
               role: 'user',
-              content: `Pitch exactly ${stillNeeded} distinct project ideas.`,
+              content: userPrompt,
             },
           ],
           schemaName: 'idea_sketches',
@@ -344,36 +304,14 @@ app.post('/api/refine-idea', async (req: Request, res: Response) => {
       });
     }
 
-    let refinementPrompt = '';
-    switch (refinementType) {
-      case 'sql_schema':
-        refinementPrompt = `Provide a complete, production-ready PostgreSQL relational schema (DDL) for storing, indexing, and querying data for this project: "${idea.title}". Include tables, primary keys, foreign keys, JSONB columns where appropriate, B-tree/GIN indexes, constraints, and audit timestamps. Provide SQL code blocks with explanations.`;
-        break;
-      case 'pitfalls_edge_cases':
-        refinementPrompt = `Conduct a rigorous Staff-Engineer level failure mode analysis for "${idea.title}". Identify 5 subtle, insidious production failure modes (e.g. race conditions, memory leaks, split-brain, file descriptor leaks, thundering herd, cascading timeouts) and provide the exact mitigation strategy for each in ${idea.language}.`;
-        break;
-      case 'starter_code':
-        refinementPrompt = `Write the foundational starter code implementation in ${idea.language} for "${idea.title}". Include the primary data structures, core interfaces/traits, a clean initialization function, and error handling. Make the code authentic, idiomatic, and ready to compile. Also provide a minimal Dockerfile or build configuration.`;
-        break;
-      case 'implementation_roadmap':
-        refinementPrompt = `Create a day-by-day 3-week engineering roadmap for building "${idea.title}". Break it down into Day 1-5, Day 6-10, Day 11-15, and Day 16-21. For each milestone, provide concrete acceptance criteria, test commands (e.g. cargo test, go test, pytest), and benchmark thresholds.`;
-        break;
-      case 'interview_defense':
-        refinementPrompt = `Generate a technical interview preparation guide for presenting "${idea.title}" on a resume. Include: 1) The 30-second elevator pitch, 2) 4 deep architectural questions a Senior/Staff interviewer will ask and the ideal high-scoring answers, 3) Metrics to boast about (e.g., latency, throughput, memory overhead).`;
-        break;
-      default:
-        refinementPrompt = `Provide a comprehensive technical architecture blueprint for "${idea.title}" in ${idea.language}. Detail component communication, data serialization, concurrency patterns, and storage mechanisms.`;
-    }
-
-    if (customQuestion) {
-      refinementPrompt += `\n\nAdditionally, specifically address this user inquiry: "${customQuestion}"`;
-    }
-
-    const systemInstruction = `You are a Principal Software Architect at IdeaFactory specializing in ${idea.language} and ${idea.domain}.
-Provide deeply technical, concrete, actionable engineering guidance. Use clean Markdown, well-commented code blocks, and precise terminology. Do not speak down to the engineer.`;
+    const { system, userPrompt } = buildRefinePrompts({
+      idea,
+      refinementType,
+      customQuestion,
+    });
 
     const response = await llm.generate(
-      { system: systemInstruction, messages: [{ role: 'user', content: refinementPrompt }], temperature: 0.7 },
+      { system, messages: [{ role: 'user', content: userPrompt }], temperature: 0.7 },
       model
     );
 
@@ -402,47 +340,13 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       });
     }
 
-    let roleInstruction = '';
-    switch (role) {
-      case 'system_architect':
-        roleInstruction =
-          'You are a Distinguished Systems Architect at IdeaFactory. You specialize in distributed consensus, low-level OS kernels, memory hierarchies, high-throughput network protocols, and trade-off analysis. You challenge naive designs and recommend bulletproof distributed patterns.';
-        break;
-      case 'principal_engineer':
-        roleInstruction =
-          'You are a Pragmatic Principal Software Engineer. You write clean, high-performance code in Rust, Go, Python, C++, Zig, and TypeScript. You focus on ergonomics, zero-allocation fast paths, correct error handling, and testability.';
-        break;
-      case 'code_reviewer':
-        roleInstruction =
-          'You are a Thorough Senior Code Reviewer. You meticulously spot race conditions, goroutine/memory leaks, unhandled edge cases, missing lock acquisitions, security vulnerabilities, and cache invalidation traps.';
-        break;
-      case 'interview_coach':
-        roleInstruction =
-          'You are a Tier-1 Tech Lead & Systems Engineering Interviewer. You evaluate projects based on engineering depth, trade-off articulation, failure mode awareness, and real-world applicability.';
-        break;
-      default:
-        roleInstruction = 'You are an expert software engineering co-founder and mentor.';
-    }
+    const { system, messages: history } = buildChatPrompts({
+      role,
+      currentIdeaContext,
+      messages,
+    });
 
-    if (currentIdeaContext) {
-      roleInstruction += `\n\nACTIVE PROJECT CONTEXT:
-The user is currently examining the following project idea:
-Title: ${currentIdeaContext.title}
-Language: ${currentIdeaContext.language}
-Complexity: ${currentIdeaContext.complexity}
-Domain: ${currentIdeaContext.domain}
-Summary: ${currentIdeaContext.tagline}
-Core Architecture: ${currentIdeaContext.coreArchitecture}
-Always keep your answers grounded in this project's domain and language unless the user asks to switch.`;
-    }
-
-    // Client history uses 'model' for assistant turns
-    const history = messages.map((m: any) => ({
-      role: m.role === 'model' ? ('assistant' as const) : ('user' as const),
-      content: String(m.content ?? ''),
-    }));
-
-    const response = await llm.generate({ system: roleInstruction, messages: history }, model);
+    const response = await llm.generate({ system, messages: history }, model);
 
     res.json({ reply: response.text, model: response.model });
   } catch (error: any) {
@@ -606,7 +510,7 @@ const isProd = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-  if (!isProd) {
+  if (!isProd && process.env.NODE_ENV !== 'test') {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -631,4 +535,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
+
+export { app };

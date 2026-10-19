@@ -238,4 +238,15 @@ describe('LM Studio client', () => {
     await expect(client.status()).resolves.toMatchObject({ reachable: false });
     expect(fetchMock).toHaveBeenCalled();
   });
+
+  it('reports unreachable when the configured LMSTUDIO_MODEL is not in /v1/models', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json(200, { data: [{ id: 'other-model' }] }));
+    const client = createLlmClient(lmEnv, fetchMock)!;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(client.status()).resolves.toEqual({
+      provider: 'lmstudio',
+      label: 'LM Studio · not ready',
+      reachable: false,
+    });
+  });
 });
