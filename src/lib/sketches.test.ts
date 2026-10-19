@@ -4,9 +4,12 @@ import { DEMO_SKETCH_POOL } from '../data/demoSketches';
 import {
   CONCRETE_DOMAINS,
   DEFAULT_IDEAS_REQUEST,
+  buildDemoExpandedIdea,
   buildDemoSketches,
   buildExpandPrompt,
+  mergeSketches,
   normalizeGenerateIdeasRequest,
+  parseExpandPrompt,
   parseSketches,
   sketchToDraftIdea,
 } from './sketches';
@@ -210,6 +213,45 @@ describe('sketchToDraftIdea', () => {
       goal: 'Learning',
       createdAt: '2026-10-15',
     });
+  });
+});
+
+describe('parseExpandPrompt', () => {
+  it('extracts title and pitch from an expand prompt', () => {
+    const prompt = buildExpandPrompt(sampleSketch);
+    expect(parseExpandPrompt(prompt)).toEqual({ title: 'Tiny KV', pitch: 'A tiny key-value store.' });
+  });
+
+  it('returns empty fields for unrelated text', () => {
+    expect(parseExpandPrompt('Generate something cool')).toEqual({ title: undefined, pitch: undefined });
+  });
+});
+
+describe('buildDemoExpandedIdea', () => {
+  it('keeps sketch title and pitch when expanding in demo mode', () => {
+    const idea = buildDemoExpandedIdea({
+      language: 'Go',
+      complexity: 'Advanced',
+      domain: 'Database Engines',
+      customPrompt: buildExpandPrompt(sampleSketch),
+    });
+    expect(idea.title).toBe('Tiny KV');
+    expect(idea.tagline).toBe('A tiny key-value store.');
+    expect(idea.problemStatement).toBe('A tiny key-value store.');
+  });
+
+  it('falls back to generic naming without an expand prompt', () => {
+    const idea = buildDemoExpandedIdea({ language: 'Rust', complexity: 'Advanced', domain: 'Distributed Systems' });
+    expect(idea.title).toBe('Rust Distributed Systems Core Engine');
+  });
+});
+
+describe('mergeSketches', () => {
+  it('dedupes by title and respects the max count', () => {
+    const a = { ...sampleSketch, id: 'a', title: 'One' };
+    const b = { ...sampleSketch, id: 'b', title: 'one' };
+    const c = { ...sampleSketch, id: 'c', title: 'Two' };
+    expect(mergeSketches([a], [b, c], 3)).toEqual([a, c]);
   });
 });
 

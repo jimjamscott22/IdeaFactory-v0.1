@@ -215,6 +215,120 @@ export function buildExpandPrompt(source: Pick<ExpandSource, 'title' | 'pitch' |
     .join('\n');
 }
 
+/** Reads title/pitch back out of an expand prompt produced by buildExpandPrompt. */
+export function parseExpandPrompt(customPrompt: string): { title?: string; pitch?: string } {
+  const titleMatch = customPrompt.match(/Expand this project idea into a full specification: "([^"]+)"/);
+  const pitchMatch = customPrompt.match(/^Pitch: (.+)$/m);
+  return {
+    title: titleMatch?.[1]?.trim(),
+    pitch: pitchMatch?.[1]?.trim(),
+  };
+}
+
+/** Demo-mode full spec: keeps sketch title/pitch when expanding from the Ideas tab. */
+export function buildDemoExpandedIdea(
+  params: {
+    language: IdeaItem['language'];
+    complexity: IdeaItem['complexity'];
+    domain: IdeaItem['domain'];
+    customPrompt?: string;
+  },
+  now = Date.now()
+): IdeaItem {
+  const { title: sketchTitle, pitch: sketchPitch } = parseExpandPrompt(params.customPrompt ?? '');
+  const title = sketchTitle || `${params.language} ${params.domain} Core Engine`;
+  const tagline =
+    sketchPitch ||
+    `High-throughput, resilient ${params.domain.toLowerCase()} architecture in ${params.language} designed for ${params.complexity.toLowerCase()} engineers.`;
+
+  return {
+    id: `gen-${now}`,
+    title,
+    tagline,
+    language: params.language,
+    domain: params.domain,
+    complexity: params.complexity,
+    estimatedHours: '35-50 hours',
+    problemStatement: sketchPitch
+      ? sketchPitch
+      : `Modern software systems require high-reliability ${params.domain.toLowerCase()} infrastructure. This project challenges you to build the core engine from first principles in ${params.language}.`,
+    coreArchitecture: `Multi-threaded asynchronous architecture leveraging ${params.language}'s native concurrency and standard library primitives, featuring memory-safe state isolation and structured logging.`,
+    techStack: {
+      language: params.language,
+      protocols: ['TCP/IP', 'Binary Framing'],
+      libraries: ['Standard Library', 'Telemetry', 'Async Runtime'],
+    },
+    architectureFlow: [
+      'Client initiates connection over dedicated socket',
+      'Zero-copy frame parser validates checksum and extracts payload',
+      'Lock-free queue dispatches job to thread pool workers',
+      'State machine commits transition and logs to append-only WAL',
+      'Response frame dispatched with latency metrics attached',
+    ],
+    keyChallenges: [
+      {
+        title: 'Zero-Copy Buffer Management',
+        description: 'Preventing memory fragmentation and excess heap allocations under heavy load.',
+        solutionHint: 'Implement ring buffer pooling with byte slice slicing.',
+      },
+      {
+        title: 'Deadlock-Free State Synchronization',
+        description: 'Coordinating concurrent state machine mutations across multiple worker threads.',
+        solutionHint: 'Utilize message-passing channels or fine-grained read-write locks.',
+      },
+    ],
+    mvpPhases: [
+      {
+        phase: 'Phase 1',
+        name: 'Core In-Memory Prototype',
+        duration: '1-2 Weeks',
+        goals: ['Protocol parsing', 'Basic state machine', 'Unit tests'],
+        deliverables: ['Working single-process engine with test suite'],
+      },
+      {
+        phase: 'Phase 2',
+        name: 'Durability & Concurrency',
+        duration: '2 Weeks',
+        goals: ['Multi-threading', 'Disk persistence WAL', 'Graceful shutdown'],
+        deliverables: ['Thread-safe engine with crash recovery'],
+      },
+      {
+        phase: 'Phase 3',
+        name: 'Benchmarking & Production Tooling',
+        duration: '1-2 Weeks',
+        goals: ['Load testing', 'Prometheus metrics', 'CLI tool'],
+        deliverables: ['100k ops/sec verified benchmark suite and CLI client'],
+      },
+    ],
+    learningOutcomes: [
+      `Idiomatic concurrency and memory management in ${params.language}`,
+      'Designing deterministic binary communication protocols',
+      'Production crash-recovery and observability best practices',
+    ],
+    interviewTalkingPoints: [
+      `Engineered high-throughput ${params.domain} architecture in ${params.language} with zero data loss under crash simulations`,
+      'Optimized memory allocations achieving sub-millisecond p99 latency',
+    ],
+    tags: [params.language, params.domain, params.complexity, 'First Principles'],
+    createdAt: new Date(now).toISOString().split('T')[0],
+    isBookmarked: false,
+  };
+}
+
+/** Merges sketch batches without duplicate titles (case-insensitive), up to maxCount. */
+export function mergeSketches(existing: IdeaSketch[], incoming: IdeaSketch[], maxCount: number): IdeaSketch[] {
+  const seen = new Set(existing.map((sketch) => sketch.title.toLowerCase()));
+  const merged = [...existing];
+  for (const sketch of incoming) {
+    if (merged.length >= maxCount) break;
+    const key = sketch.title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(sketch);
+  }
+  return merged;
+}
+
 function shuffle<T>(items: T[], rng: () => number): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {
