@@ -67,6 +67,8 @@ describe('expandToSpec', () => {
       language: 'Go',
       complexity: 'Advanced',
       domain: 'Database Engines',
+      sourceTitle: 'Tiny KV',
+      sourcePitch: 'A tiny key-value store.',
       customPrompt: buildExpandPrompt(source),
       constraints: [],
       model: 'gemini-3.8-flash',
@@ -76,5 +78,42 @@ describe('expandToSpec', () => {
   it('throws when the response has no idea', async () => {
     mockFetch(json(200, {}));
     await expect(expandToSpec(source, 'gemini-3.8-flash')).rejects.toThrow('No specification was returned');
+  });
+
+  it('persists the demo-mode expanded idea in the server repository and keeps sketch title/pitch', async () => {
+    vi.unstubAllGlobals();
+    const { app } = await import('../../server');
+    const server = app.listen(0);
+    try {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      const base = `http://127.0.0.1:${port}`;
+
+      const genRes = await fetch(`${base}/api/generate-idea`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: source.language,
+          complexity: source.complexity,
+          domain: source.domain,
+          sourceTitle: source.title,
+          sourcePitch: source.pitch,
+          customPrompt: buildExpandPrompt(source),
+        }),
+      });
+      expect(genRes.status).toBe(200);
+      const genData = await genRes.json();
+      expect(genData.isMock).toBe(true);
+      expect(genData.idea.title).toBe('Tiny KV');
+      expect(genData.idea.tagline).toBe('A tiny key-value store.');
+
+      const listRes = await fetch(`${base}/api/ideas`);
+      const listData = await listRes.json();
+      expect(listData.ideas.some((item: IdeaItem) => item.id === genData.idea.id && item.title === 'Tiny KV')).toBe(
+        true
+      );
+    } finally {
+      server.close();
+    }
   });
 });

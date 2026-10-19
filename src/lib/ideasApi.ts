@@ -55,6 +55,8 @@ export async function expandToSpec(source: ExpandSource, model: string): Promise
       language: source.language,
       complexity: source.complexity,
       domain: source.domain,
+      sourceTitle: source.title,
+      sourcePitch: source.pitch,
       customPrompt: buildExpandPrompt(source),
       constraints: [],
       model,

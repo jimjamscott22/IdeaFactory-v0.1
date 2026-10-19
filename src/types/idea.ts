@@ -76,6 +76,12 @@ export interface TechnicalChallenge {
   solutionHint: string;
 }
 
+export type ChatRole =
+  | 'system_architect'
+  | 'principal_engineer'
+  | 'code_reviewer'
+  | 'interview_coach';
+
 export interface IdeaItem {
   id: string;
   title: string;
@@ -105,12 +111,6 @@ export interface IdeaItem {
   sqlSchema?: string;
   dockerCompose?: string;
 }
-
-export type ChatRole =
-  | 'system_architect'
-  | 'principal_engineer'
-  | 'code_reviewer'
-  | 'interview_coach';
 
 export interface ChatMessage {
   id: string;

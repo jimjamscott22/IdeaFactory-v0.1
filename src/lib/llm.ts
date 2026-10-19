@@ -176,12 +176,17 @@ function createLmStudioClient(env: Env, fetchImpl: FetchLike): LlmClient {
 
   const resolveModel = async () => configuredModel || discoverModel();
 
-  const pingServer = async (): Promise<void> => {
+  const checkConfiguredModel = async (modelId: string): Promise<void> => {
+    let listed: any;
     try {
-      await getJson(`${baseUrl}/models`);
+      listed = await getJson(`${baseUrl}/models`);
     } catch (error) {
       if (error instanceof TypeError) throw unreachable();
       throw error;
+    }
+    const available = Array.isArray(listed?.data) && listed.data.some((m: any) => m?.id === modelId);
+    if (!available) {
+      throw new Error(`Configured LMSTUDIO_MODEL "${modelId}" is not available in LM Studio.`);
     }
   };
 
@@ -245,8 +250,13 @@ function createLmStudioClient(env: Env, fetchImpl: FetchLike): LlmClient {
     },
     async status() {
       try {
-        await pingServer();
-        const model = configuredModel || (await discoverModel());
+        let model: string;
+        if (configuredModel) {
+          await checkConfiguredModel(configuredModel);
+          model = configuredModel;
+        } else {
+          model = await discoverModel();
+        }
         return { provider: 'lmstudio', label: `LM Studio · ${model}`, model, reachable: true };
       } catch (error) {
         // Details stay in the server log; the unauthenticated status route only reports readiness.
