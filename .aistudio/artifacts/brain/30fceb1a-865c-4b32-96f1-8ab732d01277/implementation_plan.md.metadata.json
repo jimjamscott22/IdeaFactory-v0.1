@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for Catalog JSON Import and Backup Restore in IdeaFactory, including file upload/dropzone, schema validation, collision resolution modal (Merge, Append, Replace), server batch restore endpoint, and catalog stats toast.",
+  "updatedAt":  "2026-11-08T01:58:02.924819176Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

@@ -126,3 +126,31 @@ export interface McpToolCall {
   result?: any;
   executedAt: string;
 }
+
+export type CatalogImportMode = 'merge' | 'append' | 'replace';
+
+export interface CatalogImportPayload {
+  mode: CatalogImportMode;
+  ideas: Partial<IdeaItem>[];
+}
+
+export interface CatalogImportResult {
+  success: boolean;
+  importedCount: number;
+  addedCount: number;
+  updatedCount: number;
+  totalCatalogCount: number;
+  ideas: IdeaItem[];
+  mode: CatalogImportMode;
+}
+
+export interface CatalogValidationSummary {
+  isValid: boolean;
+  errors: string[];
+  parsedIdeas: IdeaItem[];
+  fullSpecsCount: number;
+  draftsCount: number;
+  languages: string[];
+  duplicateCount: number;
+}
+

@@ -217,8 +217,18 @@ export default function App() {
             onToggleBookmark={handleToggleBookmark}
             onDeleteIdea={handleDeleteIdea}
             onAddNewManualIdea={handleAddNewManualIdea}
+            onImportSuccess={(result) => {
+              setIdeas(result.ideas);
+              if (
+                result.ideas.length > 0 &&
+                (!currentIdea || !result.ideas.some((i) => i.id === currentIdea.id))
+              ) {
+                setCurrentIdea(result.ideas[0]);
+              }
+            }}
           />
         )}
+
 
         {activeTab === 'architecture' && <ArchitectureView />}
 

@@ -9,6 +9,7 @@ import {
   Sparkles,
   Trash2,
   Download,
+  Upload,
   Share2,
   ExternalLink,
   Plus,
@@ -16,15 +17,19 @@ import {
   List,
   Clock,
   Layers,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import {
   IdeaItem,
   ProgrammingLanguage,
   ComplexityLevel,
   DomainCategory,
+  CatalogImportResult,
 } from '../types/idea';
 import { formatIdeaAsMarkdown, downloadFile } from '../utils/export';
 import { DraftBadge } from './DraftBadge';
+import { ImportCatalogModal } from './ImportCatalogModal';
 
 interface RepositoryViewProps {
   ideas: IdeaItem[];
@@ -34,6 +39,7 @@ interface RepositoryViewProps {
   onToggleBookmark: (idea: IdeaItem) => void;
   onDeleteIdea: (id: string) => void;
   onAddNewManualIdea: (idea: IdeaItem) => void;
+  onImportSuccess?: (result: CatalogImportResult) => void;
 }
 
 export const RepositoryView: React.FC<RepositoryViewProps> = ({
@@ -44,6 +50,7 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
   onToggleBookmark,
   onDeleteIdea,
   onAddNewManualIdea,
+  onImportSuccess,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
@@ -52,6 +59,9 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
   const [onlyBookmarked, setOnlyBookmarked] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [showManualModal, setShowManualModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importNotification, setImportNotification] = useState<string | null>(null);
+
 
   // Filtered Ideas
   const filteredIdeas = ideas.filter((item) => {
@@ -101,6 +111,13 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowImportModal(true)}
+            className="px-3 py-1.5 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import Backup (JSON)</span>
+          </button>
+          <button
             onClick={handleExportAll}
             className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium flex items-center gap-1.5 transition-colors"
           >
@@ -109,6 +126,24 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Restore Notification Toast */}
+      {importNotification && (
+        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{importNotification}</span>
+          </div>
+          <button
+            onClick={() => setImportNotification(null)}
+            className="p-1 text-emerald-400 hover:text-emerald-200 transition-colors"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
 
       {/* Filter and Search Bar */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
@@ -378,6 +413,20 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
           <p className="text-xs text-slate-600 mt-1">Try clearing your search query or adjusting the language filter.</p>
         </div>
       )}
+
+      <ImportCatalogModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        existingIdeas={ideas}
+        onImportSuccess={(result) => {
+          const msg = `Successfully restored ${result.importedCount} ideas (${result.addedCount} added, ${result.updatedCount} updated). Total catalog: ${result.totalCatalogCount} concepts.`;
+          setImportNotification(msg);
+          if (onImportSuccess) {
+            onImportSuccess(result);
+          }
+        }}
+      />
     </div>
   );
 };
+

@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { expandToSpec, requestIdeas, saveDraft } from './ideasApi';
+import {
+  expandToSpec,
+  importCatalog,
+  requestIdeas,
+  saveDraft,
+  validateAndParseCatalogJson,
+} from './ideasApi';
 import { DEFAULT_IDEAS_REQUEST, buildExpandPrompt } from './sketches';
 import type { IdeaItem } from '../types/idea';
+
 
 function mockFetch(response: Response) {
   const fn = vi.fn().mockResolvedValue(response);
@@ -117,3 +124,100 @@ describe('expandToSpec', () => {
     }
   });
 });
+
+describe('validateAndParseCatalogJson', () => {
+  it('rejects malformed JSON', () => {
+    const res = validateAndParseCatalogJson('not a json string');
+    expect(res.isValid).toBe(false);
+    expect(res.errors[0]).toContain('JSON parse error');
+  });
+
+  it('rejects non-array non-ideas-object payloads', () => {
+    const res = validateAndParseCatalogJson(JSON.stringify({ someField: 123 }));
+    expect(res.isValid).toBe(false);
+    expect(res.errors[0]).toContain('JSON array of ideas');
+  });
+
+  it('rejects an empty array', () => {
+    const res = validateAndParseCatalogJson('[]');
+    expect(res.isValid).toBe(false);
+    expect(res.errors[0]).toContain('0 ideas');
+  });
+
+  it('rejects items missing titles', () => {
+    const res = validateAndParseCatalogJson(JSON.stringify([{ language: 'Rust' }]));
+    expect(res.isValid).toBe(false);
+    expect(res.errors[0]).toContain('missing a required "title" property');
+  });
+
+  it('validates and normalizes valid full specs and drafts', () => {
+    const sample = [
+      {
+        id: 'idea-custom-1',
+        title: 'Distributed Log Engine',
+        language: 'Rust',
+        domain: 'Distributed Systems',
+        complexity: 'Advanced',
+        problemStatement: 'Solving distributed consensus.',
+        mvpPhases: [{ phase: '1', name: 'WAL', duration: '1w', goals: [], deliverables: [] }],
+      },
+      {
+        id: 'draft-custom-2',
+        title: 'Git Submodule Explorer',
+        language: 'Go',
+        domain: 'CLI & DevTools',
+        isDraft: true,
+      },
+    ];
+
+    const existing = [
+      { id: 'idea-custom-1', title: 'Distributed Log Engine' } as IdeaItem,
+    ];
+
+    const res = validateAndParseCatalogJson(JSON.stringify(sample), existing);
+    expect(res.isValid).toBe(true);
+    expect(res.parsedIdeas.length).toBe(2);
+    expect(res.fullSpecsCount).toBe(1);
+    expect(res.draftsCount).toBe(1);
+    expect(res.languages).toContain('Rust');
+    expect(res.languages).toContain('Go');
+    expect(res.duplicateCount).toBe(1);
+    expect(res.parsedIdeas[0].id).toBe('idea-custom-1');
+    expect(res.parsedIdeas[1].isDraft).toBe(true);
+  });
+});
+
+describe('importCatalog', () => {
+  it('posts payload to /api/ideas/import and returns response', async () => {
+    const mockResult = {
+      success: true,
+      mode: 'merge' as const,
+      importedCount: 1,
+      addedCount: 1,
+      updatedCount: 0,
+      totalCatalogCount: 10,
+      ideas: [{ id: 'test-1', title: 'Test' } as IdeaItem],
+    };
+
+    const fn = mockFetch(json(200, mockResult));
+    const result = await importCatalog({
+      mode: 'merge',
+      ideas: [{ title: 'Test', language: 'Rust' }],
+    });
+
+    expect(fn.mock.calls[0][0]).toBe('/api/ideas/import');
+    expect(sentBody(fn)).toEqual({
+      mode: 'merge',
+      ideas: [{ title: 'Test', language: 'Rust' }],
+    });
+    expect(result).toEqual(mockResult);
+  });
+
+  it('throws on server import failure', async () => {
+    mockFetch(json(400, { error: 'No ideas provided for import.' }));
+    await expect(
+      importCatalog({ mode: 'merge', ideas: [] })
+    ).rejects.toThrow('No ideas provided for import.');
+  });
+});
+

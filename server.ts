@@ -386,6 +386,132 @@ app.delete('/api/ideas/:id', (req: Request, res: Response) => {
   res.json({ success: true, remaining: repository.length });
 });
 
+app.post('/api/ideas/import', (req: Request, res: Response) => {
+  try {
+    let mode: 'merge' | 'append' | 'replace' = 'merge';
+    let incomingList: any[] = [];
+
+    if (Array.isArray(req.body)) {
+      incomingList = req.body;
+    } else if (req.body && typeof req.body === 'object') {
+      if (req.body.mode && ['merge', 'append', 'replace'].includes(req.body.mode)) {
+        mode = req.body.mode;
+      }
+      if (Array.isArray(req.body.ideas)) {
+        incomingList = req.body.ideas;
+      }
+    }
+
+    if (!Array.isArray(incomingList) || incomingList.length === 0) {
+      return res.status(400).json({ error: 'No ideas provided for import.' });
+    }
+
+    const timestamp = Date.now();
+    const normalizedIdeas: IdeaItem[] = incomingList.map((raw, idx) => {
+      const title = String(raw.title || `Imported Idea ${idx + 1}`).trim();
+      const isDraft = Boolean(
+        raw.isDraft ||
+          (!raw.problemStatement && (!Array.isArray(raw.mvpPhases) || raw.mvpPhases.length === 0))
+      );
+      const language = raw.language || 'Rust';
+      const domain = raw.domain || 'CLI & DevTools';
+      const complexity = raw.complexity || 'Intermediate';
+
+      return {
+        id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `idea-imported-${timestamp}-${idx}`,
+        title,
+        tagline: typeof raw.tagline === 'string' && raw.tagline.trim() ? raw.tagline.trim() : title,
+        language,
+        domain,
+        complexity,
+        estimatedHours: typeof raw.estimatedHours === 'string' && raw.estimatedHours.trim() ? raw.estimatedHours.trim() : '25-40 hours',
+        problemStatement: typeof raw.problemStatement === 'string' && raw.problemStatement.trim() ? raw.problemStatement.trim() : title,
+        coreArchitecture: typeof raw.coreArchitecture === 'string' && raw.coreArchitecture.trim() ? raw.coreArchitecture.trim() : 'Architecture breakdown in progress.',
+        techStack: {
+          language: raw.techStack?.language || language,
+          framework: raw.techStack?.framework,
+          database: raw.techStack?.database,
+          protocols: Array.isArray(raw.techStack?.protocols) ? raw.techStack.protocols : ['HTTP/REST'],
+          libraries: Array.isArray(raw.techStack?.libraries) ? raw.techStack.libraries : [],
+        },
+        architectureFlow: Array.isArray(raw.architectureFlow) ? raw.architectureFlow : [],
+        keyChallenges: Array.isArray(raw.keyChallenges) ? raw.keyChallenges : [],
+        mvpPhases: Array.isArray(raw.mvpPhases) ? raw.mvpPhases : [],
+        learningOutcomes: Array.isArray(raw.learningOutcomes) ? raw.learningOutcomes : [],
+        interviewTalkingPoints: Array.isArray(raw.interviewTalkingPoints) ? raw.interviewTalkingPoints : [],
+        tags: Array.isArray(raw.tags) ? raw.tags : [language, domain],
+        isBookmarked: Boolean(raw.isBookmarked),
+        isDraft,
+        goal: raw.goal,
+        createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : new Date().toISOString().split('T')[0],
+        codeSnippet: raw.codeSnippet,
+        sqlSchema: raw.sqlSchema,
+        dockerCompose: raw.dockerCompose,
+      };
+    });
+
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    if (mode === 'replace') {
+      repository = [...normalizedIdeas];
+      addedCount = normalizedIdeas.length;
+      updatedCount = 0;
+    } else if (mode === 'append') {
+      const existingIdSet = new Set(repository.map((i) => i.id));
+      const freshIdeas: IdeaItem[] = [];
+
+      normalizedIdeas.forEach((item, idx) => {
+        let finalId = item.id;
+        if (existingIdSet.has(finalId)) {
+          finalId = `idea-imported-${timestamp}-${idx}-${Math.random().toString(36).substring(2, 6)}`;
+        }
+        existingIdSet.add(finalId);
+        freshIdeas.push({ ...item, id: finalId });
+        addedCount++;
+      });
+
+      repository = [...freshIdeas, ...repository];
+    } else {
+      // Default: 'merge' mode
+      normalizedIdeas.forEach((item) => {
+        const itemTitleLower = item.title.trim().toLowerCase();
+        const existingIdx = repository.findIndex(
+          (i) => i.id === item.id || i.title.trim().toLowerCase() === itemTitleLower
+        );
+
+        if (existingIdx !== -1) {
+          const existing = repository[existingIdx];
+          repository[existingIdx] = {
+            ...existing,
+            ...item,
+            // Retain user's existing bookmark if set
+            isBookmarked: existing.isBookmarked || item.isBookmarked,
+          };
+          updatedCount++;
+        } else {
+          repository.unshift(item);
+          addedCount++;
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      mode,
+      importedCount: normalizedIdeas.length,
+      addedCount,
+      updatedCount,
+      totalCatalogCount: repository.length,
+      ideas: repository,
+    });
+  } catch (error: any) {
+    console.error('Error importing ideas:', error);
+    res.status(500).json({ error: error.message || 'Failed to import ideas catalog' });
+  }
+});
+
+
 // ----------------------------------------------------
 // 5. API: Model Context Protocol (MCP) Simulator
 // ----------------------------------------------------

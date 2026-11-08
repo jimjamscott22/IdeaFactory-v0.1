@@ -11,11 +11,11 @@ This repository contains a React and TypeScript frontend with an Express backend
 | **Ideas** | Pick a language, level, domain, goal, and batch size (3, 5, or 8) with one click each, then generate several short project ideas at once. Save an idea to the Repository as a draft or expand it into a full specification. |
 | **Generator** | Generate a project specification using language, complexity, domain, optional constraints, and a custom prompt. |
 | **Spec Refiner** | Request starter code, PostgreSQL DDL, failure analysis, an implementation roadmap, or interview preparation for a selected idea. |
-| **Repository** | Browse seeded and generated ideas, search and filter the catalog, switch between grid and table views, bookmark ideas, and delete entries. |
+| **Repository** | Browse seeded and generated ideas, search and filter the catalog, switch between grid and table views, bookmark ideas, delete entries, and import/export backup catalogs as JSON. |
 | **Architecture & MCP** | Explore illustrative architecture examples and run simulated SQL queries and repository tool calls. |
 | **AI Architect Chat** | Discuss a selected project with a systems architect, principal engineer, code reviewer, or interview coach persona. |
 
-Export individual specifications as Markdown or GitHub issue template text, download refinement output, or export the currently filtered catalog as JSON. GitHub exports download a file; they do not create an issue in GitHub.
+Export individual specifications as Markdown or GitHub issue template text, download refinement output, or export/import the catalog as JSON. GitHub exports download a file; they do not create an issue in GitHub.
 
 The generator offers Rust, Go, Python, TypeScript, C++, Zig, Elixir, Kotlin, Swift, Haskell, and an “Any Language” option. Domains range from CLI tools and database engines to distributed systems, networking, compilers, security, and AI agents.
 
@@ -23,7 +23,8 @@ The generator offers Rust, Go, Python, TypeScript, C++, Zig, Elixir, Kotlin, Swi
 
 IdeaFactory is a prototype with working local UI and HTTP endpoints. These details matter when running or extending it:
 
-- **Storage is temporary.** The Express process keeps the catalog in memory and initializes it from `src/data/seedIdeas.ts` on startup. Generated ideas, bookmark changes, and deletions are lost when the server restarts. Export anything you want to retain; there is currently no catalog import workflow.
+- **Storage is in-memory with JSON backup & restore.** The Express process initializes its catalog from `src/data/seedIdeas.ts` on startup. To retain ideas across server restarts or transfer catalogs between environments, use **Export Catalog (JSON)** and **Import Backup (JSON)** in the Repository. Import supports merge, append, and clean replacement strategies with schema verification.
+
 - **Demo mode uses canned responses.** With `GEMINI_API_KEY` unset or empty and no `LLM_PROVIDER`, generation, refinement, and chat return local sample output. Demo generation uses a fixed template and does not provide genuine AI reasoning about custom prompts or constraints. Quick ideas in demo mode are drawn from a local pool of 30 hand-written ideas.
 - **PostgreSQL and MCP are simulations.** The SQL runner matches query text against canned behaviors; it does not execute SQL. The MCP sandbox dispatches ordinary HTTP requests to local handlers; it is not a standards-compliant MCP server or an automatic Gemini tool integration.
 - **Architecture examples are illustrative.** Go/Rust services, Python AI services, database schemas, and Docker Compose content shown in the Architecture view are examples embedded in the frontend. The executable backend in this repository is `server.ts`.
@@ -178,6 +179,7 @@ All endpoints use JSON and are implemented in `server.ts`.
 | `GET` | `/api/llm-status` | Report the active provider (`gemini`, `lmstudio`, or `demo`), a display label, and for LM Studio the model and whether it is reachable. Failure details are logged on the server, not returned. |
 | `GET` | `/api/ideas` | Return the current catalog and total count. |
 | `POST` | `/api/ideas` | Add an idea to the current catalog. |
+| `POST` | `/api/ideas/import` | Batch restore or merge ideas; accepts `{ mode: 'merge'|'append'|'replace', ideas: [...] }` or a raw array of ideas. |
 | `PUT` | `/api/ideas/:id` | Merge supplied fields into an existing idea. |
 | `DELETE` | `/api/ideas/:id` | Remove an idea from the current catalog. |
 | `POST` | `/api/mcp-invoke` | Simulate `list_ideas`, `search_by_stack`, `check_duplicates`, or `get_idea_by_id` with a `tool` and `params`. |
