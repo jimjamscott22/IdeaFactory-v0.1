@@ -13,10 +13,13 @@ import {
   Terminal,
   Sparkles,
   AlertTriangle,
+  UploadCloud,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import { IdeaItem } from '../types/idea';
 import { formatIdeaAsMarkdown, formatIdeaAsGitHubIssue, downloadFile } from '../utils/export';
 import { DraftBadge } from './DraftBadge';
+import { SaveToDriveModal } from './SaveToDriveModal';
 
 interface IdeaDetailModalProps {
   idea: IdeaItem | null;
@@ -25,7 +28,11 @@ interface IdeaDetailModalProps {
   onOpenInChat: (idea: IdeaItem) => void;
   onToggleBookmark: (idea: IdeaItem) => void;
   onExpandDraft: (idea: IdeaItem) => Promise<void>;
+  user?: User | null;
+  token?: string | null;
+  onAuthChange?: (user: User | null, token: string | null) => void;
 }
+
 
 const DraftExpandPanel: React.FC<{ idea: IdeaItem; onExpandDraft: (idea: IdeaItem) => Promise<void> }> = ({
   idea,
@@ -87,8 +94,14 @@ export const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({
   onOpenInChat,
   onToggleBookmark,
   onExpandDraft,
+  user,
+  token,
+  onAuthChange,
 }) => {
+  const [showDriveModal, setShowDriveModal] = useState(false);
+
   if (!idea) return null;
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -291,7 +304,15 @@ export const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowDriveModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 text-xs flex items-center gap-1.5 transition-colors"
+              title="Save Spec to Google Drive"
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Save to Drive</span>
+            </button>
             <button
               onClick={() =>
                 downloadFile(
@@ -318,6 +339,20 @@ export const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      <SaveToDriveModal
+        isOpen={showDriveModal}
+        onClose={() => setShowDriveModal(false)}
+        title={idea.title}
+        defaultFilename={`${idea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-spec.md`}
+        content={formatIdeaAsMarkdown(idea)}
+        mimeType="text/markdown"
+        description={`Technical specification and architecture blueprint for ${idea.title}`}
+        user={user || null}
+        token={token || null}
+        onAuthChange={onAuthChange || (() => {})}
+      />
     </div>
   );
 };
+

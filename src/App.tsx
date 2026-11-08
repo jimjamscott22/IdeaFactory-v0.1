@@ -17,6 +17,8 @@ import { IdeaItem } from './types/idea';
 import { SEED_IDEAS } from './data/seedIdeas';
 import { expandToSpec } from './lib/ideasApi';
 import { DEFAULT_EXPAND_MODEL } from './lib/sketches';
+import { User } from 'firebase/auth';
+import { initAuth, googleSignIn, logout } from './lib/auth';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('ideas');
@@ -28,6 +30,51 @@ export default function App() {
   const [ideasOptions, setIdeasOptions] = useState<IdeasOptions>(DEFAULT_IDEAS_OPTIONS);
   const [sketchBatch, setSketchBatch] = useState<SketchBatch>(EMPTY_SKETCH_BATCH);
   const [llmLabel, setLlmLabel] = useState('Gemini 3.8 Flash');
+
+  // Google Drive auth state
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleConnectDrive = async () => {
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+      }
+    } catch (err) {
+      console.error('Failed to sign in to Google Drive:', err);
+    }
+  };
+
+  const handleDisconnectDrive = async () => {
+    try {
+      await logout();
+      setGoogleUser(null);
+      setGoogleToken(null);
+    } catch (err) {
+      console.error('Failed to disconnect Google Drive:', err);
+    }
+  };
+
+  const handleAuthChange = (user: User | null, token: string | null) => {
+    setGoogleUser(user);
+    setGoogleToken(token);
+  };
 
   // Load ideas from backend API on mount
   useEffect(() => {
@@ -157,6 +204,10 @@ export default function App() {
         }}
         hasActiveIdea={!!currentIdea}
         llmLabel={llmLabel}
+        user={googleUser}
+        token={googleToken}
+        onConnectDrive={handleConnectDrive}
+        onDisconnectDrive={handleDisconnectDrive}
       />
 
       {/* Main Content Area */}
@@ -192,6 +243,9 @@ export default function App() {
             onOpenInChat={handleOpenInChat}
             onToggleBookmark={handleToggleBookmark}
             isBookmarked={!!currentIdea?.isBookmarked}
+            user={googleUser}
+            token={googleToken}
+            onAuthChange={handleAuthChange}
           />
         )}
 
@@ -205,6 +259,9 @@ export default function App() {
             allIdeas={ideas}
             onSelectIdea={(selected) => setCurrentIdea(selected)}
             onOpenInChat={handleOpenInChat}
+            user={googleUser}
+            token={googleToken}
+            onAuthChange={handleAuthChange}
           />
         )}
 
@@ -226,6 +283,9 @@ export default function App() {
                 setCurrentIdea(result.ideas[0]);
               }
             }}
+            user={googleUser}
+            token={googleToken}
+            onAuthChange={handleAuthChange}
           />
         )}
 
@@ -250,6 +310,9 @@ export default function App() {
           onOpenInChat={handleOpenInChat}
           onToggleBookmark={handleToggleBookmark}
           onExpandDraft={handleExpandDraft}
+          user={googleUser}
+          token={googleToken}
+          onAuthChange={handleAuthChange}
         />
       )}
 

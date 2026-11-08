@@ -8,7 +8,10 @@ import {
   MessageSquareCode,
   PlusCircle,
   Terminal,
+  LogOut,
+  UploadCloud,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 
 export type ActiveTab = 'ideas' | 'generator' | 'refiner' | 'repository' | 'architecture' | 'chat';
 
@@ -19,6 +22,10 @@ interface NavbarProps {
   onNewBrainstorm: () => void;
   hasActiveIdea: boolean;
   llmLabel: string;
+  user?: User | null;
+  token?: string | null;
+  onConnectDrive?: () => void;
+  onDisconnectDrive?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -28,7 +35,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   onNewBrainstorm,
   hasActiveIdea,
   llmLabel,
+  user,
+  token,
+  onConnectDrive,
+  onDisconnectDrive,
 }) => {
+
   const navItems: { id: ActiveTab; label: string; icon: React.ReactNode; count?: number }[] = [
     {
       id: 'ideas',
@@ -118,6 +130,50 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Actions */}
           <div className="flex items-center space-x-2">
+            {user && token ? (
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName || 'Google Account'}
+                    referrerPolicy="no-referrer"
+                    className="w-5 h-5 rounded-full border border-slate-700"
+                  />
+                ) : (
+                  <UploadCloud className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+                <span className="text-slate-300 font-medium hidden md:inline truncate max-w-[110px]" title={user.email || ''}>
+                  {user.displayName || user.email?.split('@')[0] || 'Drive Connected'}
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Google Drive Connected" />
+                {onDisconnectDrive && (
+                  <button
+                    onClick={onDisconnectDrive}
+                    className="ml-1 text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors"
+                    title="Sign out of Google"
+                    aria-label="Sign out of Google"
+                  >
+                    <LogOut className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ) : (
+              onConnectDrive && (
+                <button
+                  onClick={onConnectDrive}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400"
+                  title="Connect Google Drive to save and sync specs"
+                >
+                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                  </svg>
+                  <span className="hidden sm:inline">Connect Drive</span>
+                </button>
+              )
+            )}
             <button
               onClick={onNewBrainstorm}
               className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 active:scale-95"
@@ -127,6 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="sm:hidden">New</span>
             </button>
           </div>
+
         </div>
       </div>
     </header>

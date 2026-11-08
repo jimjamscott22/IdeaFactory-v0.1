@@ -19,7 +19,9 @@ import {
   Layers,
   CheckCircle2,
   X,
+  UploadCloud,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import {
   IdeaItem,
   ProgrammingLanguage,
@@ -30,6 +32,7 @@ import {
 import { formatIdeaAsMarkdown, downloadFile } from '../utils/export';
 import { DraftBadge } from './DraftBadge';
 import { ImportCatalogModal } from './ImportCatalogModal';
+import { SaveToDriveModal } from './SaveToDriveModal';
 
 interface RepositoryViewProps {
   ideas: IdeaItem[];
@@ -40,7 +43,11 @@ interface RepositoryViewProps {
   onDeleteIdea: (id: string) => void;
   onAddNewManualIdea: (idea: IdeaItem) => void;
   onImportSuccess?: (result: CatalogImportResult) => void;
+  user?: User | null;
+  token?: string | null;
+  onAuthChange?: (user: User | null, token: string | null) => void;
 }
+
 
 export const RepositoryView: React.FC<RepositoryViewProps> = ({
   ideas,
@@ -51,6 +58,9 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
   onDeleteIdea,
   onAddNewManualIdea,
   onImportSuccess,
+  user,
+  token,
+  onAuthChange,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
@@ -61,6 +71,15 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
   const [showManualModal, setShowManualModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importNotification, setImportNotification] = useState<string | null>(null);
+  const [showDriveModal, setShowDriveModal] = useState(false);
+  const [driveModalConfig, setDriveModalConfig] = useState<{
+    title: string;
+    filename: string;
+    content: string;
+    mimeType: string;
+    description: string;
+  } | null>(null);
+
 
 
   // Filtered Ideas
@@ -109,7 +128,24 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              setDriveModalConfig({
+                title: 'Catalog Backup',
+                filename: `ideafactory-catalog-${Date.now()}.json`,
+                content: JSON.stringify(filteredIdeas, null, 2),
+                mimeType: 'application/json',
+                description: `Exported IdeaFactory catalog backup (${filteredIdeas.length} concepts)`,
+              });
+              setShowDriveModal(true);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors"
+            title="Save Catalog JSON to Google Drive"
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Backup to Drive</span>
+          </button>
           <button
             onClick={() => setShowImportModal(true)}
             className="px-3 py-1.5 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors"
@@ -125,6 +161,7 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
             <span>Export Catalog (JSON)</span>
           </button>
         </div>
+
       </div>
 
       {/* Restore Notification Toast */}
@@ -323,6 +360,23 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
 
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={() => {
+                      setDriveModalConfig({
+                        title: idea.title,
+                        filename: `${idea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-spec.md`,
+                        content: formatIdeaAsMarkdown(idea),
+                        mimeType: 'text/markdown',
+                        description: `Technical specification and architecture for ${idea.title}`,
+                      });
+                      setShowDriveModal(true);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-emerald-400 rounded border border-transparent hover:border-slate-800 transition-colors"
+                    title="Save Spec to Google Drive"
+                    aria-label="Save Spec to Google Drive"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                  </button>
+                  <button
                     onClick={() =>
                       downloadFile(
                         `${idea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-spec.md`,
@@ -342,6 +396,7 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
+
               </div>
             </div>
           ))}
@@ -426,7 +481,23 @@ export const RepositoryView: React.FC<RepositoryViewProps> = ({
           }
         }}
       />
+
+      {driveModalConfig && (
+        <SaveToDriveModal
+          isOpen={showDriveModal}
+          onClose={() => setShowDriveModal(false)}
+          title={driveModalConfig.title}
+          defaultFilename={driveModalConfig.filename}
+          content={driveModalConfig.content}
+          mimeType={driveModalConfig.mimeType}
+          description={driveModalConfig.description}
+          user={user || null}
+          token={token || null}
+          onAuthChange={onAuthChange || (() => {})}
+        />
+      )}
     </div>
   );
 };
+
 

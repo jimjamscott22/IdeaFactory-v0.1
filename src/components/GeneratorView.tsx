@@ -16,7 +16,9 @@ import {
   Code2,
   ChevronRight,
   RotateCcw,
+  UploadCloud,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import {
   IdeaItem,
   ProgrammingLanguage,
@@ -24,6 +26,7 @@ import {
   DomainCategory,
 } from '../types/idea';
 import { formatIdeaAsMarkdown, formatIdeaAsGitHubIssue, downloadFile } from '../utils/export';
+import { SaveToDriveModal } from './SaveToDriveModal';
 
 interface GeneratorViewProps {
   currentIdea: IdeaItem | null;
@@ -32,7 +35,11 @@ interface GeneratorViewProps {
   onOpenInChat: (idea: IdeaItem) => void;
   onToggleBookmark: (idea: IdeaItem) => void;
   isBookmarked: boolean;
+  user?: User | null;
+  token?: string | null;
+  onAuthChange?: (user: User | null, token: string | null) => void;
 }
+
 
 const LANGUAGES: ProgrammingLanguage[] = [
   'Rust',
@@ -85,6 +92,9 @@ export const GeneratorView: React.FC<GeneratorViewProps> = ({
   onOpenInChat,
   onToggleBookmark,
   isBookmarked,
+  user,
+  token,
+  onAuthChange,
 }) => {
   const [selectedLanguage, setSelectedLanguage] = useState<ProgrammingLanguage>('Rust');
   const [selectedComplexity, setSelectedComplexity] = useState<ComplexityLevel>('Advanced');
@@ -98,6 +108,7 @@ export const GeneratorView: React.FC<GeneratorViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'flow' | 'challenges' | 'roadmap' | 'interview'>('overview');
   const [copiedStatus, setCopiedStatus] = useState('');
+  const [showDriveModal, setShowDriveModal] = useState(false);
 
   const toggleConstraint = (item: string) => {
     setSelectedConstraints((prev) =>
@@ -464,10 +475,20 @@ export const GeneratorView: React.FC<GeneratorViewProps> = ({
                       }
                       className="p-1.5 rounded-lg bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200 text-xs transition-colors"
                       title="Download Markdown Spec"
+                      aria-label="Download Markdown Spec"
                     >
                       <Download className="w-4 h-4" />
                     </button>
+                    <button
+                      onClick={() => setShowDriveModal(true)}
+                      className="p-1.5 rounded-lg bg-slate-950 text-slate-400 border border-slate-800 hover:text-emerald-400 hover:border-emerald-500/30 text-xs transition-colors"
+                      title="Save Spec to Google Drive"
+                      aria-label="Save Spec to Google Drive"
+                    >
+                      <UploadCloud className="w-4 h-4" />
+                    </button>
                   </div>
+
                 </div>
 
                 <div>
@@ -705,18 +726,28 @@ export const GeneratorView: React.FC<GeneratorViewProps> = ({
                   </button>
                 </div>
 
-                <button
-                  onClick={() =>
-                    downloadFile(
-                      `${currentIdea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-issue.md`,
-                      formatIdeaAsGitHubIssue(currentIdea)
-                    )
-                  }
-                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1"
-                >
-                  <span>Export GitHub Issue Template</span>
-                  <ChevronRight className="w-3 h-3" />
-                </button>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    onClick={() => setShowDriveModal(true)}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1 font-medium"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Save to Google Drive</span>
+                  </button>
+                  <span className="text-slate-700 hidden sm:inline">·</span>
+                  <button
+                    onClick={() =>
+                      downloadFile(
+                        `${currentIdea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-issue.md`,
+                        formatIdeaAsGitHubIssue(currentIdea)
+                      )
+                    }
+                    className="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1"
+                  >
+                    <span>Export GitHub Issue Template</span>
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
@@ -735,6 +766,22 @@ export const GeneratorView: React.FC<GeneratorViewProps> = ({
           )}
         </div>
       </div>
+
+      {currentIdea && (
+        <SaveToDriveModal
+          isOpen={showDriveModal}
+          onClose={() => setShowDriveModal(false)}
+          title={currentIdea.title}
+          defaultFilename={`${currentIdea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-spec.md`}
+          content={formatIdeaAsMarkdown(currentIdea)}
+          mimeType="text/markdown"
+          description={`Technical specification and architecture blueprint for ${currentIdea.title}`}
+          user={user || null}
+          token={token || null}
+          onAuthChange={onAuthChange || (() => {})}
+        />
+      )}
     </div>
   );
 };
+

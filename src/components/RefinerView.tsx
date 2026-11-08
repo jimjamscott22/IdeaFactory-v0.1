@@ -14,9 +14,12 @@ import {
   Share2,
   Layers,
   ChevronDown,
+  UploadCloud,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import { IdeaItem } from '../types/idea';
 import { downloadFile } from '../utils/export';
+import { SaveToDriveModal } from './SaveToDriveModal';
 
 interface RefinerViewProps {
   idea: IdeaItem | null;
@@ -24,7 +27,11 @@ interface RefinerViewProps {
   allIdeas: IdeaItem[];
   onSelectIdea: (selected: IdeaItem) => void;
   onOpenInChat: (idea: IdeaItem) => void;
+  user?: User | null;
+  token?: string | null;
+  onAuthChange?: (user: User | null, token: string | null) => void;
 }
+
 
 type RefinementMode =
   | 'sql_schema'
@@ -40,6 +47,9 @@ export const RefinerView: React.FC<RefinerViewProps> = ({
   allIdeas,
   onSelectIdea,
   onOpenInChat,
+  user,
+  token,
+  onAuthChange,
 }) => {
   const [activeMode, setActiveMode] = useState<RefinementMode>('starter_code');
   const [customQuestion, setCustomQuestion] = useState('');
@@ -47,6 +57,8 @@ export const RefinerView: React.FC<RefinerViewProps> = ({
   const [refinementResult, setRefinementResult] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
   const [copied, setCopied] = useState(false);
+  const [showDriveModal, setShowDriveModal] = useState(false);
+
 
   // Pre-seed some default refinement content if not yet generated
   const handleRefine = async (mode: RefinementMode = activeMode, customQ = customQuestion) => {
@@ -323,8 +335,17 @@ export const RefinerView: React.FC<RefinerViewProps> = ({
                   <Download className="w-3 h-3" />
                   <span>Export</span>
                 </button>
+                <button
+                  onClick={() => setShowDriveModal(true)}
+                  className="px-2.5 py-1 text-xs text-emerald-400 hover:text-emerald-300 rounded border border-emerald-500/30 hover:bg-emerald-500/10 flex items-center gap-1 transition-colors"
+                  title="Save Refinement to Google Drive"
+                >
+                  <UploadCloud className="w-3 h-3 text-emerald-400" />
+                  <span>Save to Drive</span>
+                </button>
               </>
             )}
+
           </div>
         </div>
 
@@ -351,6 +372,22 @@ export const RefinerView: React.FC<RefinerViewProps> = ({
           )}
         </div>
       </div>
+
+      {idea && refinementResult && (
+        <SaveToDriveModal
+          isOpen={showDriveModal}
+          onClose={() => setShowDriveModal(false)}
+          title={`${idea.title} (${activeMode})`}
+          defaultFilename={`${idea.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-refined-${activeMode}.md`}
+          content={refinementResult}
+          mimeType="text/markdown"
+          description={`Refined ${activeMode} artifact for ${idea.title}`}
+          user={user || null}
+          token={token || null}
+          onAuthChange={onAuthChange || (() => {})}
+        />
+      )}
     </div>
   );
 };
+
