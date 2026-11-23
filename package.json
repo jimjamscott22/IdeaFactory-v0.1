@@ -40,6 +40,7 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "@google/genai@2.28.0": true,
-    "protobufjs@7.6.6": true
+    "protobufjs@7.6.6": true,
+    "@firebase/util@1.15.3": true
   }
 }
