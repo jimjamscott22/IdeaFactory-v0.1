@@ -1,4 +1,65 @@
 import { IdeaItem } from '../types/idea';
+import { TimelineSchedule, formatPhaseWindow } from '../lib/timeline';
+
+export function slugifyFilename(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'project-spec'
+  );
+}
+
+export function formatTimelineAsMarkdown(idea: IdeaItem, schedule: TimelineSchedule): string {
+  const totalUnitLabel = `${schedule.totalDuration} ${schedule.unit}${schedule.totalDuration === 1 ? '' : 's'}`;
+  const phaseSections = schedule.phases
+    .map((phase) => {
+      const windowLabel = formatPhaseWindow(phase, schedule.unit);
+      const statusLabel =
+        phase.status === 'completed'
+          ? 'Completed'
+          : phase.status === 'in_progress'
+            ? 'In Progress'
+            : 'Pending';
+
+      const goalsBlock =
+        phase.goals.length > 0
+          ? `**Goals:**\n${phase.goals.map((g) => `- ${g}`).join('\n')}`
+          : '';
+
+      const deliverablesBlock =
+        phase.milestones.length > 0
+          ? `**Milestones & Deliverables (${phase.completedCount}/${phase.totalCount}):**\n${phase.milestones
+              .map((m) => `- [${m.completed ? 'x' : ' '}] ${m.label}`)
+              .join('\n')}`
+          : '';
+
+      return `## ${phase.phase}: ${phase.name}
+- **Schedule Window:** ${windowLabel} (${phase.rawDuration})
+- **Status:** ${statusLabel} (${phase.progressPercent}%)
+
+${[goalsBlock, deliverablesBlock].filter(Boolean).join('\n\n')}`;
+    })
+    .join('\n\n---\n\n');
+
+  return `# ${idea.title} — Project Timeline & Milestones
+*${idea.tagline}*
+
+- **Domain:** ${idea.domain}
+- **Primary Language:** ${idea.language}
+- **Complexity:** ${idea.complexity}
+- **Estimated Build Time:** ${idea.estimatedHours}
+- **Total Roadmap Span:** ${totalUnitLabel}
+- **Overall Milestone Progress:** ${schedule.completedMilestones}/${schedule.totalMilestones} completed (${schedule.progressPercent}%)
+
+---
+
+${phaseSections}
+
+---
+*Exported from IdeaFactory Architecture Timeline*
+`;
+}
 
 export function formatIdeaAsMarkdown(idea: IdeaItem): string {
   return `# ${idea.title}
