@@ -290,7 +290,31 @@ export default function App() {
         )}
 
 
-        {activeTab === 'architecture' && <ArchitectureView />}
+        {activeTab === 'architecture' && (
+          <ArchitectureView
+            ideas={ideas}
+            currentIdea={currentIdea}
+            onSelectIdea={(selected) => setCurrentIdea(selected)}
+            onUpdateIdea={(updated) => {
+              setCurrentIdea(updated);
+              setIdeas((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+              if (inspectingIdea && inspectingIdea.id === updated.id) {
+                setInspectingIdea(updated);
+              }
+              fetch(`/api/ideas/${updated.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ milestoneProgress: updated.milestoneProgress }),
+              }).catch((err) => {
+                console.error('Failed to persist milestone progress on server:', err);
+              });
+            }}
+            onNavigateTab={setActiveTab}
+            user={googleUser}
+            token={googleToken}
+            onAuthChange={handleAuthChange}
+          />
+        )}
 
         {activeTab === 'chat' && (
           <ChatbotView

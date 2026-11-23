@@ -15,13 +15,38 @@ import {
   ExternalLink,
   Download,
   Zap,
+  CalendarRange,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import { downloadFile } from '../utils/export';
+import { IdeaItem } from '../types/idea';
+import { ProjectTimelineView } from './ProjectTimelineView';
+import { ActiveTab } from './Navbar';
 
-export const ArchitectureView: React.FC = () => {
+interface ArchitectureViewProps {
+  ideas: IdeaItem[];
+  currentIdea: IdeaItem | null;
+  onSelectIdea: (idea: IdeaItem) => void;
+  onUpdateIdea: (updated: IdeaItem) => void;
+  onNavigateTab?: (tab: ActiveTab) => void;
+  user: User | null;
+  token: string | null;
+  onAuthChange: (user: User | null, token: string | null) => void;
+}
+
+export const ArchitectureView: React.FC<ArchitectureViewProps> = ({
+  ideas,
+  currentIdea,
+  onSelectIdea,
+  onUpdateIdea,
+  onNavigateTab,
+  user,
+  token,
+  onAuthChange,
+}) => {
   const [activeLayer, setActiveLayer] = useState<
-    'overview' | 'postgres' | 'backend' | 'intelligence' | 'mcp' | 'docker'
-  >('overview');
+    'timeline' | 'overview' | 'postgres' | 'backend' | 'intelligence' | 'mcp' | 'docker'
+  >('timeline');
 
   // SQL Query Runner State
   const [sqlQuery, setSqlQuery] = useState('SELECT id, title, language, complexity FROM ideas LIMIT 5;');
@@ -284,17 +309,18 @@ func (s *Server) routes() {
       {/* Layer Navigation Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs border-b border-slate-800">
         {[
-          { id: 'overview', label: '1. Architecture Topology', icon: <Network className="w-3.5 h-3.5 text-amber-400" /> },
-          { id: 'postgres', label: '2. PostgreSQL Layer & SQL Runner', icon: <Database className="w-3.5 h-3.5 text-cyan-400" /> },
-          { id: 'backend', label: '3. Go / Rust API Gateway', icon: <Server className="w-3.5 h-3.5 text-emerald-400" /> },
-          { id: 'intelligence', label: '4. Gemini 3.8 Flash Engine (Python)', icon: <Cpu className="w-3.5 h-3.5 text-purple-400" /> },
-          { id: 'mcp', label: '5. Model Context Protocol (MCP)', icon: <Code2 className="w-3.5 h-3.5 text-rose-400" /> },
-          { id: 'docker', label: '6. Docker & Infrastructure', icon: <Container className="w-3.5 h-3.5 text-blue-400" /> },
+          { id: 'timeline', label: 'Project Timeline', icon: <CalendarRange className="w-3.5 h-3.5 text-amber-400" /> },
+          { id: 'overview', label: 'Architecture Topology', icon: <Network className="w-3.5 h-3.5 text-amber-400" /> },
+          { id: 'postgres', label: 'PostgreSQL & SQL Runner', icon: <Database className="w-3.5 h-3.5 text-cyan-400" /> },
+          { id: 'backend', label: 'Go / Rust API Gateway', icon: <Server className="w-3.5 h-3.5 text-emerald-400" /> },
+          { id: 'intelligence', label: 'Gemini 3.8 Flash Engine', icon: <Cpu className="w-3.5 h-3.5 text-purple-400" /> },
+          { id: 'mcp', label: 'Model Context Protocol (MCP)', icon: <Code2 className="w-3.5 h-3.5 text-rose-400" /> },
+          { id: 'docker', label: 'Docker & Infrastructure', icon: <Container className="w-3.5 h-3.5 text-blue-400" /> },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveLayer(tab.id as any)}
-            className={`px-3.5 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${
               activeLayer === tab.id
                 ? 'bg-slate-800 text-slate-100 border border-slate-700 font-semibold'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -305,6 +331,20 @@ func (s *Server) routes() {
           </button>
         ))}
       </div>
+
+      {/* LAYER 0: PROJECT TIMELINE & MILESTONES */}
+      {activeLayer === 'timeline' && (
+        <ProjectTimelineView
+          ideas={ideas}
+          currentIdea={currentIdea}
+          onSelectIdea={onSelectIdea}
+          onUpdateIdea={onUpdateIdea}
+          onNavigateTab={onNavigateTab}
+          user={user}
+          token={token}
+          onAuthChange={onAuthChange}
+        />
+      )}
 
       {/* LAYER 1: OVERVIEW TOPOLOGY */}
       {activeLayer === 'overview' && (

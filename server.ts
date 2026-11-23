@@ -443,6 +443,10 @@ app.post('/api/ideas/import', (req: Request, res: Response) => {
         isBookmarked: Boolean(raw.isBookmarked),
         isDraft,
         goal: raw.goal,
+        milestoneProgress:
+          raw.milestoneProgress && typeof raw.milestoneProgress === 'object' && !Array.isArray(raw.milestoneProgress)
+            ? raw.milestoneProgress
+            : undefined,
         createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : new Date().toISOString().split('T')[0],
         codeSnippet: raw.codeSnippet,
         sqlSchema: raw.sqlSchema,

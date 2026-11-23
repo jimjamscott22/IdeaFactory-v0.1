@@ -102,6 +102,7 @@ export interface IdeaItem {
   isBookmarked?: boolean;
   isDraft?: boolean;
   goal?: ProjectGoal;
+  milestoneProgress?: Record<string, boolean>;
   createdAt: string;
   codeSnippet?: {
     filename: string;
